@@ -27,4 +27,4 @@ This project is MIT-licensed. See `LICENCE` for details.
 - **Andreas Kochenburger** (Original author, Heidelberg, Germany)  
 - **Alexander Slatina** (`minf2c.c`)  
 
-Have fun and stay healthy!
+Have fun!
