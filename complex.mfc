@@ -1,0 +1,242 @@
+\ ============================================================================
+\  MINFORTH V3.4 COMPLEX NUMBER WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+#INCLUDE core.mfc
+#INCLUDE float.mfc
+C
+C #define MFCOMPLEX
+
+\ ------ Stack Operations ----------------------------------------------------
+
+: Z>R  \ ( f: z -- | r: -- z ) MF move complex number to return stack
+   fswap f>r f>r ;
+
+: ZR@  \ ( r: z -- z | f: -- z ) MF read complex number from return stack
+   fr> fr@ fswap fdup f>r ;
+   
+: ZR>  \ ( r: z -- | f: -- z ) MF fetch complex number from return stack
+   fr> fr> fswap ;
+  
+: ZDROP \ ( f: z -- ) MF drop top complex number from stack
+   fdrop fdrop ;
+
+: ZSWAP  \ ( f: z1 z2 -- z2 z1 ) MF swap top two complex numbers on stack
+   frot f>r frot fr> ;
+
+: ZNIP  \ ( f: z1 z2 -- z2 ) MF drop second complex number from stack
+   zswap zdrop ;
+
+: ZROT  \ ( f: z1 z2 z3 -- z2 z3 z1 ) MF rotate top 3 complex numbers on stack
+   z>r zswap zr> zswap ;
+
+: ZDUP  \ ( f: z -- z z ) MF duplicate top complex number on stack
+   fover fover ;
+
+: ZOVER  \ ( f: z1 z2 -- z1 z2 z1 ) MF copy second over top complex number
+   z>r zdup zr> zswap ;
+
+: ZTUCK  \ ( f: z1 z2 -- z2 z1 z2 ) MF copy top under second complex number
+   zdup z>r zswap zr> ;
+
+\ ------ Memory Access -------------------------------------------------------
+
+: COMPLEXES  \ ( n -- u ) MF bytes required to store n complex numbers
+   2* floats ;
+
+[DEFINED] +FIELD [IF]
+: ZFIELD:   faligned 1 complexes +field ;   \ 
+[THEN]
+
+: Z!  \ ( f: r1 r2 d: adr -- ) MF store fp pair at adr
+C  mferr(mfin(1);mffin(2));
+C  mfFlt *a=(mfFlt*)mfpop();
+C  *a=mffpop(), *++a=mffpop(); ; 
+
+: Z@  \ ( adr -- f: r1 r2 d: ) MF restore fp pair from adr
+C  mferr(mfin(1);mffout(2));
+C  mfFlt *a=(mfFlt*)mfpop();
+C  mffpush(*++a), mffpush(*--a); ;
+
+\ ------ Comparisons ---------------------------------------------------------
+
+: Z0=  \ (f z1 z2 -- d: f ) MF true if z1 == z2 (beware of fp-rounding)
+   f0= f0= and ;
+
+: Z=  \ (f z1 z2 -- d: f ) MF true if z1 == z2 (beware of fp-rounding)
+   f>r frot f= fr> f= and ;
+
+: Z~  \ ( f: z1 z2 r3 -- flag ) MF check proximity of complex numbers
+   ftuck f>r f>r frot fr> fr> f~ f~ and ;
+
+\ ------ Arithmetics ---------------------------------------------------------
+
+: ZREAL  \ ( f: abs arg -- re ) MF real part of complex number
+   fdrop ;
+
+: ZIMAG  \ ( f: z -- im ) MF imaginary part of complex number
+   fnip ;
+
+: ZCONJ  \ ( f: z -- z' ) MF conjugate complex number
+   fnegate ;
+
+: ZABS  \ ( f: z -- |z| ) MF absolute value (modulus)
+   fhypot ;
+
+: ZARG  \ ( f: z -- angle ) MF argument (angle, phase) -pi..+pi
+   fswap fatan2 ;
+
+: ZSCALE  \ ( f: z1 p -- zscaled ) MF scalar multiplication
+C  mferr(mffin(3));
+C  mfFlt p=mffpop();
+C  mffsec*=p, mfftos*=p; ;
+
+: Z>POLAR  \ ( f: re im -- |z| angle ) MF convert to polar representation
+   zdup zarg f>r zabs fr> ;
+
+: Z>CARTESIAN  \ ( f: |z| angle -- re im ) MF convert to cartesian repres.
+   fdup fcos fswap fsin frot zscale ;
+
+: Z2*  \ ( f: z -- z*2 ) MF double complex number
+   2. zscale ;
+
+: Z2/  \ ( f: z -- z*2 ) MF half complex number
+   0.5 zscale ;
+
+: ZNEGATE  \ ( f: z -- -z ) MG negate complex number
+   -1. zscale ;
+
+: Z+  \ ( f: z1 z2 -- zsum ) MF complex addition
+C  mferr(mffin(4));
+C  mfFlt i2=mffpop(), r2=mffpop();
+C  mffsec+=r2, mfftos+=i2; ;
+
+: Z-  \ ( f: z1 z2 -- zdiff ) MF complex subtraction
+   znegate z+ ;
+
+: Z*  \ ( f: z1 z2 -- zprod ) MF complex multiplication
+C  mferr(mffin(4));
+C  mfFlt i2=mffpop(), r2=mffpop(), i1=mfftos, r1=mffsec, p, q;
+C  p=r1*r2, q=i1*i2;
+C  mffsec=p-q, mfftos=(r1+i1)*(r2+i2)-p-q; ;
+
+: 1/Z  \ ( f: z -- 1/z ) MF inverse complex number
+C  mferr(mffin(2));
+C  mfFlt x=mffsec, y=mfftos, h=1.L/(x*x+y*y);
+C  mffsec*=h, mfftos*=-h; ;
+
+DEFER ZINV IS 1/Z  \ ( f: z -- 1/z ) MF inverse complex number
+
+: Z/  \ ( f: z1 z2 -- zquot ) MF complex division
+   1/z z* ;
+
+\ ------ Basic Functions -----------------------------------------------------
+
+: ZSQR  \ ( f: z -- z^2 ) MF square of complex number
+C  mferr(mffin(2));
+C  mfFlt x=mffsec, y=mfftos;
+C  mffsec=x*x-y*y, mfftos=2.*x*y; ;
+
+: ZSQRT  \ ( f: z -- sqrt(z) ) MF square root of complex number (bc re<0)
+C  mferr(mffin(2));
+C  mfFlt x=mffsec, y=mfftos, m=hypot(x,y);
+C  mffsec=sqrt((m+x)*0.5L), x=sqrt((m-x)*0.5L), mfftos=copysign(x,y); ;
+
+: ZEXP  \ ( f: z -- exp(z) ) MF exponential of complex number
+   fdup fcos fswap fsin frot fexp zscale ; 
+
+: ZLN  \ ( f: z -- ln(z) ) MF natural logarithm of complex number (bc re<=0)
+   z>polar fswap fln fswap ;
+
+: Z**  \ ( f: z1 z2 -- z1**z2 ) MF raise z1 to the power of z2 (bc re<=0)
+   zswap zdup z0= IF znip ELSE zln z* zexp THEN ;
+
+\ ------ Trigonometric Functions ---------------------------------------------
+
+: ZCOS  \ ( f: z -- cos(z) ) MF complex cosine
+C  mferr(mffin(2));
+C  mfFlt x=mffsec, y=mfftos;
+C  mffsec=cos(x)*cosh(y), mfftos=-sin(x)*sinh(y); ;
+
+: ZSIN  \ ( f: z -- sin(z) ) MF complex sine
+C  mferr(mffin(2));
+C  mfFlt x=mffsec, y=mfftos;
+C  mffsec=sin(x)*cosh(y), mfftos=cos(x)*sinh(y); ;
+
+: ZTAN  \ ( f: z -- tan(z) ) MF complex tangent
+   zdup zsin zswap zcos z/ ;
+
+: ZACOS  \ ( f: z -- acos(z) ) MF complex arc cosine (bc |im|>1)
+   zdup zdup z* fswap 1. f- fswap zsqrt z+ zln fswap fnegate ;
+  
+: ZASIN  \ ( f: z -- asin(z) ) MF complex arc sine  (bc |im|>1)
+   zacos znegate fswap pi f2/ f+ fswap ;
+
+: ZATAN  \ ( f: z -- atan(z) ) MF complex arc tangent (bc |im|>=1)
+   zdup 1. f+ zswap znegate 1. f+ z/ zln z2/ fnegate fswap ;
+
+\ ------ Hyperbolic Functions ------------------------------------------------
+
+: ZCOSH  \ ( f: z -- cosh(z) ) MF complex hyperbolic cosine
+   fnegate fswap zcos ;
+   
+: ZSINH  \ ( f: z -- sinh(z) ) MF complex hyperbolic sine
+   fnegate fswap zsin fswap fnegate ;
+
+: ZTANH  \ ( f: z -- tanh(z) ) MF complex hyperbolic tangent
+   fnegate fswap ztan fswap fnegate ;
+
+: ZACOSH  \ ( f: z -- acosh(z) ) MF complex hyperbolic area cosine (bc im<1)
+   zdup zdup fswap 1. f+ fswap zsqrt zswap fswap -1. f+ fswap zsqrt
+   z* z+ zln ;
+ 
+: ZASINH \ ( f: z -- asinh(z) ) MF complex hyperbolic area sine (bc |im|>1)
+   zdup zdup z* fswap 1. f+ fswap zsqrt z+ zln ;
+
+: ZATANH  \ ( f: z -- atanh(z) ) MF complex hyperbolic area tangent (bc |re|>=1)
+   zdup fswap 1. f+ fswap zln zswap znegate fswap 1. f+ fswap zln
+   z- z2/ ;
+
+\ ------ Input / Output -------------------------------------------------------
+
+: Z.  \ ( r1 r2 -- ) MF print complex number 
+   fswap fdup 0. 0. f~ IF fdrop ELSE _f. THEN
+   i" mfpush(signbit(mfftos));" IF '-' ELSE '+' THEN emit 'j' emit fabs
+   i" mfpush(mfftos==1.L);" IF fdrop ELSE _f. THEN space ;
+
+: >COMPLEX  \ ( a u -- f, true: r: -- fr fi ) MF convert string to complex
+C  mferr(mfin(2);mffout(2));
+C  mfChar u=(mfChar)mfpop(), *a=(mfChar*)mftos, *pj, s; 
+C  pj=memchr(a,'j',u), mftos=0;
+C  if (!pj||(pj==a)) return;
+C  s=*(pj-1); if (!((s=='+')||(s=='-'))) return;
+C  mftos=(mfCell)a, mfpush(pj-a-1);
+   >float ~IF false EXIT THEN
+C  if (++pj-a==u) mffpush(1.L); else { mfpush(pj), mfpush((a+u)-pj);
+   >float ~IF fdrop false EXIT THEN
+C  } mfpush(-1); if (s=='-') mfftos=-mfftos; ;
+
+: ZLITERAL  \ (r d -- ) MF compile double fp-number
+   fswap [,] fliteral [,] fliteral ; IMMEDIATE COMPILE-ONLY
+
+: ZCONSTANT  \ ( ct: z <n> -- rt: -- re im ) MF complex constant
+   create f, f, ['] z@ _<does ;
+
+: ZVARIABLE
+   create 0. fdup f, fdup f, fdup f, f, ;
+
+: ZVALUE  \ ( r: r1 r2 <name> -- ) MF double fp-number value
+   ['] z@ ['] z! ['] z+ _(value) f, f, ;
+
+\ ----- System Integration ---------------------------------------------------
+
+: __CXENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" COMPLEX" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?
+
+: __CXBOOT  \ ( -- ) MF recognize complex numbers in <re>+j<im> syntax 
+   deferred _boot
+   ['] >complex ['] noop ['] zliteral s" REC-COMPLEX" named recognizer ;
+IS _BOOT

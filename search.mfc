@@ -1,0 +1,110 @@
+\ ============================================================================
+\  MINFORTH V3.4 SEARCH-ORDER WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+
+#INCLUDE core.mfc
+C
+C #define MFSEARCH
+
+\ ----- Wordlists ------------------------------------------------------------
+
+: SEARCH-WORDLIST  \ ( a u wid -- 0 | xt f ) 16.6.1.2192 find word in wordlist
+   caps @ IF
+C    for (int i=0; i<mfsec; i++) mfbuf[i]=toupper(*(char*)(mfthd+i));
+C    mfthd=(mfCell)mfbuf;
+   THEN _searchnt ;
+
+: FORTH-WORDLIST  \ ( -- wid ) 16.6.1.1595 get MinForth standard wordlist ID
+   _wordlists ;
+
+: __EMPTYWL  \ ( -- wid ) MF empty wordlist id
+C  mferr(mfout(1));
+C  mfpush(mfdict); ;
+
+\ wordlist structure: (last,name,voclink)
+: __.VOC  \ ( wid -- ) MF display wordlist name
+   cell+ @ ?dup IF count ELSE s" -" THEN space type space ;
+
+: ORDER  \ ( -- ) 16.6.2.1985 display wordlists in search order
+   ." \nCONTEXT: " _context 8 cell FOR> n @ IF n @ __.voc THEN NEXT
+   ." \nCURRENT: " _current @ __.voc ;  
+
+: VOCS  \ ( -- ) MF display all wordlists
+   ." \nWORDLISTS: " forth-wordlist
+   BEGIN dup __.voc 2 cells + @ dup 1- here u> UNTIL drop ;
+
+: WORDLIST  \ ( -- wid ) 16.6.1.2460 create new empty wordlist
+   forth-wordlist BEGIN dup 2 cells + @ 1- here u< WHILE 2 cells + @ REPEAT
+   here dup rot 2 cells + ! __emptywl , 0 , 0 , ;
+
+: _!VOC  \ ( rt: a -- ) MF set vocabulary n first in search order 
+   _context ! ;
+
+: VOCABULARY  \ ( 'name' -- ) MF create new vocabulary
+   create wordlist _latest @ _>name swap cell+ ! ['] _!voc _<does ;
+
+\ ------ Search Order --------------------------------------------------------
+
+: FORTH  \ ( -- ) 16.6.2.1590 set standard wordlist first in search order
+   forth-wordlist _!voc ;
+
+: SET-CURRENT  \ ( wid -- ) 16.6.1.2195 set compilation wordlist
+   _current ! ;
+
+: GET-CURRENT \  ( -- wid ) 16.6.1.1643 get compilation wordlist
+   _current @ ;
+
+: DEFINITIONS  \ ( -- ) 16.6.1.1180 set first of search order for compilation
+   _context @ set-current ;
+
+: PREVIOUS   \ ( -- ) 16.6.2.2037 undo a previous ALSO
+   _context cell+ @ 0= IF -50 throw THEN
+   _context dup cell+ swap 7 cells move ;
+   
+: ALSO  \ ( -- ) 16.6.2.0715 move up search order by one position
+   _context 7 cells + @ IF -49 throw THEN
+   _context dup cell+ 7 cells move ;
+
+VARIABLE _ROOTWL
+
+: ROOT  \ ( -- ) MF set minimal wordlist first in search oder context
+   _rootwl @ _!voc ;
+
+: ONLY  \ 16.6.2.1965 set search order to minimum wordlist only
+   _context 8 cells erase root ;
+   
+: GET-ORDER  \ ( -- widn..wid1 n ) 16.6.1.1647 get search order
+   0 _context 8 cell <FOR n @ ?dup IF swap 1+ THEN NEXT ;
+
+: SET-ORDER  \ ( widn..wid1 n -- ) 16.6.1.2197 get search order   
+   dup -1 < IF drop -50 throw THEN
+   dup 8 > IF drop -49 throw THEN
+   _context 8 cells erase dup 0<
+   IF drop root ELSE _context swap cell FOR> n ! NEXT THEN ;
+
+\ ----- System Integration ---------------------------------------------------
+
+: __SCEXCCODE  \ ( xc -- ) display exception message
+   CASE
+	 -49 OF ." search-order overflow" EXIT ENDOF
+	 -50 OF ." search-oder underflow" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __SCBOOT  \ ( -- ) MF prepare minimum wordlist during system boot
+   deferred _boot warning @ >r warning off
+   wordlist _rootwl ! also root definitions
+   s" : FORTH-WORDLIST FORTH-WORDLIST ;" evaluate
+   s" : SET-ORDER SET-ORDER ;" evaluate
+   s" : FORTH FORTH ;" evaluate
+   forth definitions r> warning ! ; 
+IS _BOOT
+
+: __SCENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" WORDLISTS" str= IF 2drop 8 true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

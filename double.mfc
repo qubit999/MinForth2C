@@ -1,0 +1,291 @@
+\ ============================================================================
+\ MINFORTH V3.4 DOUBLE NUMBER WORDSET
+\ ============================================================================
+\ provided "as is" as per license conditions in file mflicense.txt 
+
+#INCLUDE core.mfc
+\ already in CORE:
+\ DNEGATE DABS
+C
+C #define MFDOUBLE
+
+\ ------ Stack ---------------------------------------------------------------
+
+: 2ROT  \ ( d1 d2 d3 -- d2 d3 d1 ) 8.6.2.0420 rotate top 3 doubles
+   5 roll 5 roll ;
+
+: 2NIP  \ ( d1 d2 -- d2 ) MF discard second double below top double
+   2swap 2drop ;
+
+: 2TUCK    \ ( d1 d2 -- d2 d1 d2 ) MF copy top double below second double
+   2dup 2>r 2swap 2r> ;
+
+\ ------ Math ----------------------------------------------------------------
+
+: D>S  \ ( d -- n ) 8.6.1.1140 convert double to single number
+C  mferr(mfin(2); if (!(mftos==-1||mftos==0)) mfthrow(-24););
+C  mfdrop; ;
+
+: D+  \ ( d1 d2 -- dsum ) 8.6.1.1040 add top 2 doubles
+C  mferr(mfin(4));
+C #ifndef MFDBL
+C  mfUCell d1l=mffth, d1h=mfthd, d2l=mfsec, d2h=mftos;
+C  d1l+=d2l, d1h+=d2h+(d1l<d2l);
+C  mf2drop, mfsec=d1l, mftos=d1h;
+C #else
+C  mf2drop, mfdtos+=mfdontos;
+C #endif
+   ;
+
+: D-  \ ( d1 d2 -- ddiff ) 8.6.1.1050 subtract top 2 doubles
+C  mferr(mfin(4));
+C #ifndef MFDBL
+C  mfUCell d1l=mffth, d1h=mfthd, d2l=mfsec, d2h=mftos;
+C  d1h-=d2h+(d1l<d2l); d1l-=d2l; 
+C  mf2drop, mfsec=d1l, mftos=d1h;
+C #else
+C  mf2drop, mfdtos-=mfdontos;
+C #endif
+   ;
+
+: D2*   \ ( d -- d' ) 8.6.1.1090 shift d left by one bit
+C  mferr(mfin(2));
+C #ifndef MFDBL
+C  mfUCell l=mfsec, h=mftos; h=(h<<1)|(l>>63), l<<=1;
+C  mfsec=l, mftos=h;
+C #else
+C  mfdtos<<=1;
+C #endif
+   ;
+
+: D2/   \ ( d -- d' ) 8.6.1.1090 shift d right by one bit
+C  mferr(mfin(2));
+C #ifndef MFDBL
+C  mfUCell l=mfsec; mfCell h=mftos; l=(l>>1)|(h<<63), h>>=1;
+C  mfsec=l, mftos=h;
+C #else
+C  mfdtos>>=1;
+C #endif
+   ;
+
+: D*  \ ( d1 d2 -- dprod ) MF multiply top 2 doubles
+C #ifndef MFDBL
+   pluck over xor >r dabs 2>r dabs over >r   
+   2 rpick _mu* 2r> * + rdrop
+   r> 0< IF dnegate THEN
+C #else
+C  mferr(mfin(4));
+C  mf2drop, mfdtos*=mfdontos;
+C #endif
+   ;
+
+: D/REM  \ ( du dv -- drem dquot ) MF double number symmetric division
+C  mferr(mfin(4);mfzero(mftos||mfsec));
+C #ifndef MFDBL
+   pluck >r pluck over xor >r dabs 2swap dabs 2swap 
+   dup ~IF drop _mu/mod 0 -rot ELSE
+C  mfUCell ul=mffth, uh=mfthd, vl=mfsec, vh=mftos, q=0, m=1;
+C  if ((uh==vh)&&(ul==vl)) uh=ul=0, q=1; else {
+C  while(vh==uh?vl<=ul:vh<=uh)
+C    vh=(vh<<1)|(vl>>63), vl<<=1, m<<=1;
+C  while(m>1) {
+C    vl=(vl>>1)|(vh<<63), vh>>=1, m>>=1;
+C    if (uh==vh?ul>=vl:uh>=vh) { uh-=vh+(vl>ul), ul-=vl, q|=m; } } } 
+C  mffth=ul, mfthd=uh, mfsec=q, mftos=0;
+   THEN r> 0< IF dnegate THEN r> 0< IF 2swap dnegate 2swap THEN   
+C #else
+C  mfDbl d1=mfdsec, d2=mfdtos, q;
+C  if(d1==d2) mfdsec=0, mfdtos=1; else
+C  q=d1/d2, mfdtos=q, mfdsec=d1-q*d2;
+C #endif
+   ;
+
+: D/MOD  \ ( du dv -- dmod dquotq ) MF double number floored division
+C  mfCell vh=mftos, vl=mfsec, s=mftos^mfthd;
+   d/rem
+C  if (!((mfthd||mffth)&&(s<0))) return;
+C  mfrpush(vl), mfrpush(vh);
+   1 0 d- 2swap 2r> d+ 2swap ;
+   
+: D/  \ ( d1 d2 -- dquot ) MF double number division
+   d/rem 2nip ;
+
+\ ------ Logics --------------------------------------------------------------
+
+: D0=   \ ( d -- flag ) 8.6.1.1080 true if d = 0
+C #ifndef MFDBL
+   or 0=
+C #else
+C  mferr(mfin(2));
+C  mfsec=-(mfdtos==0),mfdrop;
+C #endif
+   ;
+
+: D0<   \ ( d -- flag ) 8.6.1.1080 true if d < 0
+C #ifndef MFDBL
+   nip 0<
+C #else
+C  mferr(mfin(2));
+C  mfsec=-(mfdtos<0),mfdrop;
+C #endif
+   ;
+
+: D=    \ ( d1 d2 -- f ) 8.6.1.1120 true if d1 = d2
+C #ifndef MFDBL
+   d- or 0=
+C #else
+C  mferr(mfin(4));
+C  mf2drop,mfsec=-(mfdtos==mfdontos),mfdrop;
+C #endif
+   ;
+
+: D<>    \ ( d1 d2 -- f ) MF true if d1 <> d2
+   d= not ;
+
+: D<    \ ( d1 d2 -- flag ) 8.6.2.1270 true if d1 < d2
+C mferr(mfin(4));
+C #ifndef MFDBL
+C  mfCell d2h=mfpop(), d2l=mfpop(), d1h=mfpop(), d1l=mftos;
+C  mftos=-(d1h==d2h?(mfUCell)d1l<(mfUCell)d2l:d1h<d2h);
+C #else
+C  mf2drop,mfsec=-(mfdtos<mfdontos),mfdrop;
+C #endif
+   ;
+   
+: D>    \ ( d1 d2 -- flag ) MF true if d1 > d2  
+   2swap d< ;
+   
+: D>=    \ ( d1 d2 -- flag ) MF true if d1 >= d2  
+   d< not ;
+   
+: D<=    \ ( d1 d2 -- flag ) MF true if d1 <= d2  
+   d> not ;
+
+: DU<   \ ( ud1 ud2 -- flag ) 8.6.2.1270 true if ud1 < ud2 unsigned
+C  mferr(mfin(4));
+C #ifndef MFDBL
+C  mfUCell d2h=mfpop(), d2l=mfpop(), d1h=mfpop(), d1l=mftos;
+C  mftos=-(d1h==d2h?d1l<d2l:d1h<d2h);
+C #else
+C  mf2drop,mfsec=-((mfUDbl)mfdtos<(mfUDbl)mfdontos),mfdrop;
+C #endif
+   ;
+
+: DU>    \ ( ud1 ud2 -- flag ) MF true if ud1 > ud2 unsigned
+   2swap du< ;
+
+: DU>=    \ ( ud1 ud2 -- flag ) MF true if ud1 >= ud2 unsigned  
+   du< not ;
+   
+: DU<=    \ ( ud1 ud2 -- flag ) MF true if ud1 <= ud2 unsigned 
+   du> not ;
+
+: DMIN  \ ( d1 d2 -- d1|d2 ) 8.6.1.1220 discard the bigger double number
+C #ifndef MFDBL
+   2over 2over d< ~IF 2swap THEN 2drop
+C #else
+C  mferr(mfin(4));
+C  mf2drop,mfdtos=(mfdtos<mfdontos?mfdtos:mfdontos);
+C #endif
+   ;
+
+: DMAX  \ ( d1 d2 -- d1|d2 ) 8.6.1.1210 discard the bigger double number
+C #ifndef MFDBL
+   2over 2over d< IF 2swap THEN 2drop
+C #else
+C  mferr(mfin(4));
+C  mf2drop,mfdtos=(mfdtos>mfdontos?mfdtos:mfdontos);
+C #endif
+   ;
+
+: DROL  \ ( ud1 p -- ud2 ) MF double bitwise shift left
+C  mferr(mfin(3));
+C  mfUCell p=mfpop()&(2*MFBITS-1), h=mftos, l=mfsec, ho=h, lo=l, x;
+C  if (p>=MFBITS) { p-=MFBITS; x=h,ho=h=lo,lo=l=x; }
+C  if (p) { lo=(l<<p)|(h>>(MFBITS-p)); ho=(h<<p)|(l>>(MFBITS-p)); }
+C  mfsec=lo, mftos=ho; ;
+
+: DROR  \ ( ud1 p -- ud2 ) MF double bitwise shift right
+C  mferr(mfin(3));
+C  mfUCell p=mfpop()&(2*MFBITS-1), h=mftos, l=mfsec, ho=h, lo=l, x;
+C  if (p>=MFBITS) { p-=MFBITS; x=h,ho=h=lo,lo=l=x; }
+C  if (p) { lo=(l>>p)|(h<<(MFBITS-p)); ho=(h>>p)|(l<<(MFBITS-p)); }
+C  mfsec=lo, mftos=ho; ;
+
+\ ------ Mixed Math ----------------------------------------------------------
+
+: M+    \ ( d n -- dsum ) 8.6.1.1830 add single number n to double number d
+   s>d d+ ;
+
+: M*/   \ ( d1 n1 n2 -- d2 ) 8.6.1.1820 d1*n1/n2 with intermediate triple
+   pluck pluck pluck xor xor >r abs >r abs >r dabs
+   r@ um* rot r> um* swap >r _mu+ r> -rot r@ um/mod -rot r> um/mod -rot drop
+   r> 0< IF dnegate THEN ;
+
+\ ------ Double Output -------------------------------------------------------
+
+: __(D.)  \ ( d -- a l ) MF convert signed double number to string
+   tuck dabs <# #s rot sign #> ;
+
+: D.    \ ( d -- ) 8.6.1.1060 display signed double number
+   __(d.) type space ;
+   
+: D.R   \ ( d w -- ) 8.6.1.1070 display signed d right-aligned in w-wide field
+   >r __(d.) r> over - spaces type ;
+
+: __(UD.)   \ ( u -- a u ) MF convert unsigned single number
+   <# #s #> ;
+
+: UD.  \ ( u -- ) MF display unsigned single number
+   __(ud.) type space ;
+
+: UD.R  \ ( u w -- ) MF display u right-aligned in a w-wide field
+   >r __(ud.) r> over - spaces type ;
+
+: D,.   \ ( d -- ) MF display signed d with ,-separators
+   _,sep on d. _,sep off ;
+
+: D,.R   \ ( d w -- ) MF display signed d with ,-separators in w-field
+   _,sep on d.r _,sep off ;
+
+: UD,.   \ ( d -- ) MF display unsigned d with ,-separators
+   _,sep on ud. _,sep off ;
+
+: UD,.R   \ ( d w -- ) MF display unsigned d with ,-separators in w-field
+   _,sep on ud.r _,sep off ;
+
+\ ------ Compiling -----------------------------------------------------------
+
+: 2,  \ ( n m -- ) MF compile cell pair n m into dataspace
+   , , ;
+
+: 2LITERAL  \ (r d -- ) 8.6.1.0390 compile double number
+   swap [,] literal [,] literal ; IMMEDIATE COMPILE-ONLY
+
+: 2CONSTANT  \ ( ct: a b <n> -- rt: -- a b ) 8.6.1.0360 double constant
+   create 2, ['] 2@ _<does ;
+   
+: 2VARIABLE  \ ( ct: <n> -- rt: -- a ) 8.6.1.0440 double variable
+   create 0 0 2, ;
+
+: 2VALUE  \ ( ct: a b <n> rt: -- a b ) | -- val ) 8.6.2.0435 double value
+   ['] 2@ ['] 2! ['] d+ _(value) 2, ;
+
+\ ------ System Integration --------------------------------------------------
+
+: __DENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" DOUBLE" str= IF 2drop true true EXIT THEN
+   2dup s" DOUBLE-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?
+
+: _DOUBLE?  \ ( a u -- d t | f ) MF recognize double number
+   \ because single number? was called first:
+   2drop __dpl @ 0< IF false ELSE __dbl 2@ true THEN ;
+
+: DPL __dpl ;  \ MF decimal point location variable
+
+: __DBOOT  \ ( -- ) MF extend boot sequence to recognize double numbers
+   deferred _boot
+   ['] _double? ['] noop ['] 2literal s" REC-DOUBLE" named recognizer ;
+IS _BOOT

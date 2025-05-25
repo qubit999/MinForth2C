@@ -1,0 +1,40 @@
+\ ============================================================================
+\ MINFORTH V3.4 OVERLAYS
+\ ============================================================================
+\ provided 'as is' as per license conditions in file mflicense.txt 
+
+#INCLUDE file.mfc
+
+\ ------ Save/Load System Overlays -------------------------------------------
+
+: __LASTPRIM  \ ( -- a ) header address of last primitive
+C  mfpush(mfdict+MFPRIMS); ;
+
+VARIABLE __OVCHK  \ overlay check variable
+   
+: SAVED-OVERLAY  \ ( "name" -- ) MF save current dataspace to file
+   s" overlay" named marker _latest @ _>cfa ,
+   r/w bin create-file throw
+   __lastprim __ovchk ! __ovchk cell pluck write-file throw
+   _origin __ovchk ! __ovchk cell pluck write-file throw
+   _origin here over - pluck write-file throw
+   close-file throw
+   here cell- @ execute ;
+   
+: LOADED-OVERLAY  \ ( "name" -- ) MF load saved dataspace from file
+   r/o bin open-file throw
+   __ovchk cell pluck read-file throw drop
+   __ovchk @ __lastprim <> IF close-file throw -263 throw THEN
+   __ovchk cell pluck read-file throw drop
+   __ovchk @ _origin <> IF close-file throw -263 throw THEN
+   _origin _hp @ over - pluck read-file throw
+   swap close-file throw 
+   _origin + cell- @ execute ;
+
+: SAVE-OVERLAY  \ ( <name> -- ) MF parse file name and save overlay file
+   parse-name state @
+   IF [,] sliteral [,] saved-overlay ELSE saved-overlay THEN ; IMMEDIATE
+   
+: LOAD-OVERLAY  \ ( <name> -- ) MF parse file name and save overlay file
+   parse-name state @
+   IF [,] sliteral [,] loaded-overlay ELSE loaded-overlay THEN ; IMMEDIATE

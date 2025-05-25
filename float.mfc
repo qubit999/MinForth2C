@@ -1,0 +1,648 @@
+\ ============================================================================
+\ MINFORTH V3.4 FLOATING-POINT NUMBER WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per license conditions in file mflicense.txt 
+
+#INCLUDE core.mfc
+\ already in CORE:
+\ _FP!
+C
+C #define MFFLOAT
+
+\ ------ FP Stack ------------------------------------------------------------
+
+: FDEPTH  \ ( -- u ) 12.6.1.1497 fp stack depth          
+C  mferr(mfout(1));
+C  mfpush(mffp-mffst); ;
+
+: FDROP  \ (f n -- ) 12.6.1.1500 discard FTOS
+C  mferr(mffin(1));
+C  mffdrop; ; INLINE
+
+: FPICK  \ ( n -- f: fn ) MF push nth fp-element on fp stack 
+C  mferr(mfin(1);mffin(abs((int)mftos)+1));
+C  mfFlt p=mffp[-mfpop()];
+C  mffpush(p); ; INLINE
+
+: FDUP  \ (f n -- n n ) 12.6.1.1510 duplicate FTOS
+C  mferr(mffin(1);mffout(1));
+C  mffup,mfftos=mffsec; ; INLINE
+
+: FOVER  \ (f a b -- a b a ) 12.6.1.1600 duplicate FSECOND over FTOS
+C  mferr(mffin(2);mffout(1));
+C  mffup, mfftos=mffthd; ; INLINE
+
+: FSWAP  \ (f a b -- b a ) 12.6.1.1620 exchange FTOS with FSECOND
+C  mferr(mffin(2));
+C  mfFlt f=mffsec; mffsec=mfftos,mfftos=f; ; INLINE
+
+: FROT  \ (f a b c -- b c a) 12.6.1.1610 rotate top three fp-stack elements
+C  mferr(mffin(3));
+C  mfFlt f=mffthd; mffthd=mffsec,mffsec=mfftos,mfftos=f; ; INLINE
+
+: FNIP  \ (f a b -- b ) MF discard FSECOND
+C  mferr(mffin(2));
+C  mffsec=mfftos, mffdrop; ; INLINE
+
+: FTUCK  \ (f a b -- b a b ) MF copy FTOS below FSECOND
+C  mferr(mffin(2);mffout(1));   
+C  mffup, mfftos=mffsec, mffsec=mffthd, mffthd=mfftos; ; INLINE  
+
+\ ------ Return Stack --------------------------------------------------------
+
+: F>R  \ ( f: f -- |r -- x ) MF move float to return stack
+C  mferr(mffin(1);mfrout(MFFLTSIZE));
+C  *(mfFlt*)(mfrp+1)=mffpop(), mfrp+=MFFLTSIZE; ; INLINE
+ 
+: FR@  \ ( f: -- f |r x -- x ) MF read float from return stack
+C  mferr(mfrin(MFFLTSIZE);mffout(1));
+C  mffpush(*(mfFlt*)(mfrp-(MFFLTSIZE-1))); ; INLINE
+
+: FR>  \ ( f: -- f |r x -- ) MF move float from return stack
+   fr@
+C  mfrp-=MFFLTSIZE; ; INLINE
+
+\ ------ Rounding ------------------------------------------------------------
+
+: FLOOR  \ ( f: r -- rf ) 12.6.1.1558 round to nearest smaller integer
+C  mferr(mffin(1));
+C  mfftos=floor(mfftos); ;
+
+: FROUND  \ (f r -- rf ) 12.6.1.1612 round to nearest integer
+C  mferr(mffin(1));
+C  mfftos=rint(mfftos); ;
+
+: FTRUNC  \ ( f: r -- rf ) 12.6.2.1627 round to nearest integer towards zero
+C  mferr(mffin(1));
+C  mfftos=trunc(mfftos); ;
+
+\ ------ Conversion ----------------------------------------------------------
+
+: S>F  \ ( n -- f:r ) 12.6.2.2175 convert single number to float
+C  mferr(mfin(1);mffout(1));
+C  mffpush(mfpop()); ;
+
+: F>S  \ ( f:r -- n ) 12.6.2.1471 convert float to single number
+C  mferr(mffin(1);mfout(1));
+C  mfpush(mffpop()); ;
+
+: D>F  \ ( d -- f:r ) 12.6.1.1130 fp equivalent of double number d
+C  mferr(mfin(2);mffout(1));
+C  char s=mftos<0;
+   dabs
+C #ifdef MFDBL
+C  mffpush(mfdpop());
+C #else
+C  mfUCell hi=mfpop(), lo=mfpop();
+C #ifdef MF32
+C  mffpush(ldexp((mfFlt)hi,32)+(mfFlt)lo);
+C #else
+C  mfFlt lf=ldexp((mfFlt)(lo>>32),32)+(mfFlt)(lo&0xFFFFFFFF);
+C  mfFlt hf=ldexp((mfFlt)(hi>>32),32)+(mfFlt)(hi&0xFFFFFFFF);
+C  mffpush(ldexp(hf,64)+lf);
+C #endif
+C #endif 
+C  if (s) mfftos=-mfftos; ;
+
+: F>D  \ (f: f -- d ) 12.6.1.1470 convert float to double number
+C  mferr(mffin(1);mfout(2));
+C #ifdef MFDBL
+C  mfDbl d=(mfDbl)mffpop();
+C  mfpush((d<<MFBITS)>>MFBITS),mfpush(d>>MFBITS);
+C #else
+C  mfFlt f=round(mffpop()); char s=(f<0.); f=fabs(f);
+C #ifdef MF32
+C  mfFlt hf=floor(ldexp(f,-32)), lf=f-ldexp(hf,32);
+C  mfpush((mfUCell)lf), mfpush((mfUCell)hf);
+C #else
+C  mfFlt h=floor(ldexp(f,-64)), l=f-ldexp(h,64);
+C  mfFlt hhf=floor(ldexp(h,-32)), hlf=h-ldexp(hhf,32);
+C  mfFlt lhf=floor(ldexp(l,-32)), llf=l-ldexp(lhf,32);
+C  mfpush(((mfUCell)lhf<<32)+(mfUCell)llf);
+C  mfpush(((mfUCell)hhf<<32)+(mfUCell)hlf);
+C #endif
+C  if (s)
+   dnegate
+C #endif
+   ;
+
+\ ------ Arithmetic ---------------------------------------------------------- 
+
+: FNEGATE  \ (f r -- -r ) 12.6.1.1567 negation of r
+C  mferr(mffin(1));
+C  mfFlt t=mfftos;
+C  mfftos = (signbit(t) ? copysign(t,+1.) : copysign(t,-1.)); ; 
+
+: FABS \ ( f: r -- |r| ) 12.6.2.1474 absolute value of r
+C  mferr(mffin(1));
+C  mfftos = copysign(mfftos,+1.); ;
+
+: F+  \ (f a b -- sum ) 12.6.1.1420 add FTOS to FSECOND
+C  mferr(mffin(2));
+C  mffsec += mfftos; mffdrop; ; INLINE
+
+: F-  \ (f a b -- diff ) 12.6.1.1425 subtract FTOS from FSECOND
+C  mferr(mffin(2));
+C  mffsec -= mfftos; mffdrop; ; INLINE
+
+: F*  \ (f a b -- prod ) 12.6.1.1410 multiply FTOS to FSECOND
+C  mferr(mffin(2));
+C  mffsec *= mfftos; mffdrop; ; INLINE
+
+: F/  \ ( a b -- div ) 12.6.1.1430 divide FSECOND by FTOS
+C  mferr(mffin(2));
+C  mffsec /= mfftos; mffdrop; ; INLINE
+
+: 1/F  \ ( a -- 1/a ) MF inverse FTOS number
+C  mferr(mffin(1));
+C  mfftos = 1./mfftos; ; INLINE
+
+DEFER FINV IS 1/F  \ ( a -- 1/a ) MF inverse FTOS number
+
+: F2*  \ ( a -- a*2 ) MF multiply FTOS with 2
+C  mferr(mffin(1));
+C  mfftos = ldexp(mfftos,1); ; 
+
+: F2/  \ ( a -- a/2 ) MF divide FTOS by 2
+C  mferr(mffin(1));
+C  mfftos = ldexp(mfftos,-1); ;
+
+C #if defined __TINYC__ || defined __DJGPP__ 
+C  mfFlt fma(mfFlt f, mfFlt m, mfFlt a) { return f*m+a; }
+C #endif
+
+: FMA  \ ( a b c -- horner ) MF (a*b)+c precise multiply-add
+C  mferr(mffin(3));
+C  mfFlt c=mffpop(), b=mffpop();
+C  mfftos=fma(mfftos,b,c); ;
+
+: F**  \ (f a b -- a**b ) 12.6.2.1415 raise a to the power of b
+C  mferr(mffin(2));
+C  mffsec = pow(mffsec,mfftos); mffdrop; ;
+
+: FALOG  \ (f a -- 10^a )12.6.2.1484 raise ten to the power of FTOS
+C  mferr(mffin(1));
+C  mfftos = pow(10.,mfftos); ;
+
+: FSQR  \ (f a -- a^2 ) MF square of FTOS
+C  mferr(mffin(1));
+C  mfftos*=mfftos; ;
+
+: FSQRT  \ (f x -- root ) 12.6.2.1618 square root of FTOS
+C  mferr(mffin(1));
+C  mfftos = sqrt(mfftos); ;
+
+: FEXP  \ (f: x -- exp ) 12.6.2.1515 base-e exponential of FTOS
+C  mferr(mffin(1));
+C  mfftos = exp(mfftos); ;
+
+: FEXPM1  \ (f: x -- exp ) 12.6.2.1516 base-e exponential of FTOS minus 1.
+C  mferr(mffin(1));
+C #ifdef __TINYC__
+C  mfftos = exp(mfftos)-1.;
+C #else
+C  mfftos = expm1(mfftos);
+C #endif
+   ;
+
+: FLN  \ (f: x -- ln ) 12.6.2.1553 natural logarithm of FTOS
+C  mferr(mffin(1));
+C  mfftos = log(mfftos); ;
+
+: FLNP1  \ (f: x -- ln ) 12.6.2.1554 natural logarithm of FTOS plus 1.
+C  mferr(mffin(1));
+C #ifdef __TINYC__
+C  mfftos = log(mfftos+1.);
+C #else
+C  mfftos = log1p(mfftos);
+C #endif
+   ;
+
+: FLOG  \ (f: x -- ln ) 12.6.2.1557 base-10 logarithm of FTOS
+C  mferr(mffin(1));
+C  mfftos = log10(mfftos); ;
+
+\ ------ Logics --------------------------------------------------------------
+
+: ISNAN  \ (f x -- d: -1|0|1 ) MF signed NaN check
+C  mferr(mffin(1);mfout(1));
+C  mfCell f=0; if (isnan(mfftos)) f=(signbit(mfftos)?-1:1); 
+C  mffdrop, mfpush(f); ;
+
+: ISINF  \ (f x -- d: -1|0|1 ) MF signed INF check
+C  mferr(mffin(1);mfout(1));
+C  mfCell f=0; if (isinf(mfftos)) f=(signbit(mfftos)?-1:1); 
+C  mffdrop, mfpush(f); ;
+
+: FSIGN  \ (f: r -- d: f ) MF sign function
+C  mferr(mffin(1);mfout(1));
+C  mfpush(signbit(mffpop())?-1:0); ;
+
+: F0=  \ (f x -- d: -- f ) 12.6.1.1450 true if x == 0. exactly
+C  mferr(mffin(1);mfout(1));
+C  mfpush(-(mffpop()==0.)); ;
+
+: F0<  \ (f x -- d: -- f ) 12.6.1.1440 true if x < 0.
+C  mferr(mffin(1);mfout(1));
+C  mfFlt x=mffpop();
+C  if (x==0.) mfpush(0); else mfpush(signbit(x)?-1:0); ;
+
+: F0>  \ (f x -- d: -- f ) MF true if x > 0.
+C  mferr(mffin(1);mfout(1));
+C  mfFlt x=mffpop();
+C  if (x==0.) mfpush(0); else mfpush(signbit(x)?0:-1); ;
+
+: F0<>  \ (f x -- d: -- f ) MF true if x <> 0
+   f0= not ;
+   
+: F0>=  \ (f x -- d: -- f ) MF true if x >= 0
+   f0< not ;
+   
+: F0<=  \ (f x -- d: -- f ) MF true if x <= 0
+   f0> not ;
+   
+: F<  \ (f x y -- d: -- f ) 12.6.1.1460 true if x < y
+C  mferr(mffin(2);mfout(1));
+C  mfFlt y=mffpop(), x=mffpop();
+C  if (isnan(x)||isnan(y)) mfpush(0); else mfpush(-(x<y)); ;
+
+: F>=  \ (f x y -- d: -- f ) MF true if x >= y
+   f< not ;
+
+: F>  \ (f x y -- d: -- f ) MF true if x > y
+   fswap f< ;
+
+: F<=  \ (f x y -- d: -- f ) MF true if x <= y
+   f> not ;
+
+: F=  \ (f r1 r2 -- d: f ) MF true if x == y (beware of fp-rounding)
+C  mfFlt r2=mffpop(), r1=mffpop();
+C  mfpush(-(r1==r2)); ;
+
+: F<>  \ (f x y -- d: -- f ) MF true if x <> y
+   f= not ;
+
+: F~  \ ( f: r1 r2 r3 -- flag ) 12.6.2.1640 check proximity of floats
+C  mferr(mffin(3);mfout(1));
+C  mfFlt r3=mffpop(), r2=mffpop(), r1=mffpop(); 
+C  if (isnan(r3)) mfpush(0);
+C  else if (r3>0) { 
+C    mfpush(fabs(r1-r2)<r3?-1:0); }
+C  else if (r3<0) { 
+C    mfpush(fabs(r1-r2)<-r3*(fabs(r1)+fabs(r2))?-1:0); }
+C  else { // r3==0
+C    if (signbit(r1)!=signbit(r2)) mfpush(0); 
+C    else mfpush(isnan(r1)&&(isnan(r2))?-1:-(r1==r2)); } ;
+
+: FMIN \ ( f: r1 r2 -- r ) 12.6.1.1565 the lesser of r1 r2
+C  mferr(mffin(2));
+C  mfFlt r2=mffpop(); if (r2<mfftos) mfftos=r2; ;
+
+: FMAX \ ( f: r1 r2 -- r ) 12.6.1.1562 the greater of r1 r2
+C  mferr(mffin(2));
+C  mfFlt r2=mffpop(); if (r2>mfftos) mfftos=r2; ;
+
+\ ------ Trigonometry --------------------------------------------------------
+
+: RAD>DEG  \ f: r -- d ) MF convert radians to degrees \ 0° <= d < 360°
+C  mferr(mffin(1));
+C  mfFlt r=mfftos*57.2957795130823208768;
+C  r=fmod(r,360.); if (r<0.) r+=360.;
+C  mfftos=r; ;
+   
+: DEG>RAD  \ f: d -- r ) MF convert degrees to radians \ 0 <= r < 2*pi
+C  mferr(mffin(1));
+C  mfFlt d=mfftos*0.0174532925199432957692;
+C  d=fmod(d,6.28318530717958647693); if (d<0.) d+=6.28318530717958647693; 
+C  mfftos=d; ;
+
+: FSIN  \ (f: x -- sin ) 12.6.2.1614 sine of FTOS
+C  mferr(mffin(1));
+C  mfftos = sin(mfftos); ;
+
+: FCOS  \ (f: x -- cos ) 12.6.2.1493 cosine of FTOS
+C  mferr(mffin(1));
+C  mfftos = cos(mfftos); ;
+
+: FTAN  \ (f: x -- tan ) 12.6.2.1625 tangent of FTOS
+C  mferr(mffin(1));
+C  mfftos = tan(mfftos); ;
+
+: FASIN  \ (f: x -- asin ) 12.6.2.1486 arc sine of FTOS
+C  mferr(mffin(1));
+C  mfftos = asin(mfftos); ;
+
+: FACOS  \ (f: x -- acos ) 12.6.2.1476 arc cosine of FTOS
+C  mferr(mffin(1));
+C  mfftos = acos(mfftos); ;
+
+: FATAN  \ (f: x -- atan ) 12.6.2.1488 arc tangent of FTOS
+C  mferr(mffin(1));
+C  mfftos = atan(mfftos); ;
+
+: FSINCOS  \ (f: x -- sin cos ) 12.6.2.1616  sine and cosine of FTOS
+C  mferr(mffin(1);mffout(1));
+C  mfFlt x=mfftos; mfftos=sin(x), mffpush(cos(x)); ;
+
+: FHYPOT  \ (f: a b -- mag ) MF sqrt(a^2+b^2) hypotenuse or complex magnitude 
+C  mferr(mffin(2));
+C  mfFlt b=mffpop();
+C  mfftos=hypot(mfftos,b); ;
+
+: FATAN2  \ (f: x y -- atan2 ) 12.6.2.1489 angle or complex argument/phase
+C  mferr(mffin(2));
+C  mfFlt y=mffpop(), x=mfftos;
+C  mfftos = atan2(x,y);
+C #ifdef __POCC__
+C  mfFlt p=0.785398163397448309616;
+C  if (isinf(x)&&isinf(y)) { if (y<0.) p*=3.;
+C    mfftos=(x<0.?-p:p); }
+C #endif
+   ;
+
+\ ------ Hyperbolics ---------------------------------------------------------
+
+: FSINH  \ (f: x -- sinh ) 12.6.2.1617 hyperbolic sine of FTOS
+C  mferr(mffin(1));
+C  mfftos = sinh(mfftos); ;
+
+: FCOSH  \ (f: x -- cosh ) 12.6.2.1494 hyperbolic cosine of FTOS
+C  mferr(mffin(1));
+C  mfftos = cosh(mfftos); ;
+
+: FTANH  \ (f: x -- tanh ) 12.6.2.1626 hyperbolic tangent of FTOS
+C  mferr(mffin(1));
+C  mfftos = tanh(mfftos); ;
+
+: FASINH  \ (f: x -- asinh ) 12.6.2.1487 area hyperbolic sine of FTOS
+C  mferr(mffin(1));
+C #ifdef __TINYC__
+C  mfftos=log(mfftos+sqrt(mfftos*mfftos+1.));
+C #else
+C  mfftos = asinh(mfftos);
+C #endif
+   ;
+
+: FACOSH  \ (f: x -- acosh ) 12.6.2.1477 area hyperbolic cosine of FTOS
+C  mferr(mffin(1));
+C #ifdef __TINYC__
+C  mfftos=log(mfftos+sqrt(mfftos*mfftos-1.));
+C #else
+C  mfftos = acosh(mfftos);
+C #endif
+   ;
+
+: FATANH  \ (f: x -- atanh ) 12.6.2.1491 area hyperbolic tangent of FTOS
+C  mferr(mffin(1));
+C #ifdef __TINYC__
+C  mfftos=log((1.+mfftos)/(1.-mfftos))*0.5;
+C #else
+C  mfftos = atanh(mfftos);
+C #endif
+   ;
+
+\ ------ Popular Constants ---------------------------------------------------
+
+: PI  \ (f: -- 3.1415.. ) MF Pi constant
+C  mferr(mffout(1));
+C  mffpush(3.14159265358979323846); ; INLINE
+
+: EULER  \ (f: -- 2.7182.. ) MF Euler number
+C  mferr(mffout(1));
+C  mffpush(2.71828182845904523536); ; INLINE
+
+: FSQRT2  \ (f: -- 1.4142.. ) MF square root of 2 
+C  mferr(mffout(1));
+C  mffpush(1.4142135623730950488); ; INLINE
+
+\ ------ Memory Access by 64-bit Floating-point Numbers ----------------------
+
+: F@  \ ( adr -- f: -- f ) 12.6.1.1472 fetch fp-number from address
+C  mferr(mfin(1);mffout(1));
+C  mffpush(*(mfFlt*)(mfpop())); ; INLINE
+
+: F!  \ ( adr -- f: f -- ) 12.6.1.1400 store fp-number at address
+C  mferr(mfin(1);mffin(1));
+C  *(mfFlt*)(mfpop()) = mffpop(); ; INLINE
+
+: FLOAT  \ ( n -- nf ) MF fp-number size
+C  mferr(mfout(1));
+C  mfpush(sizeof(mfFlt)); ; INLINE
+
+: FLOATS  \ ( n -- nf ) 12.6.1.1556 size of n fp-numbers
+C  mferr(mfin(1));
+C  mftos *= sizeof(mfFlt); ; INLINE
+
+: FLOAT+  \ ( a1 -- a2 ) 12.6.1.1555 add fp-size to address
+C  mferr(mfin(1));
+C  mftos += sizeof(mfFlt); ; INLINE
+
+: FALIGNED  \ ( a -- af ) 12.6.1.1483 next fp-aligned address
+C  mferr(mfin(1));
+C  mftos=(mftos+sizeof(mfFlt)-1)&-sizeof(mfFlt); ;
+
+: FALIGN  \ ( -- ) 12.6.1.1479 float align data-space pointer
+   _dp @ faligned _dp ! ;
+
+\ In MinForth:
+: DF@       f@ ;  \ 12.6.2.1204 
+: DF!       f! ;  \ 12.6.2.1203
+: DFLOAT+   float+ ; \ 12.6.2.1208 
+: DFLOATS   floats ; \ 12.6.2.1209
+: DFALIGNED faligned ;  \ 12.6.2.1207
+: DFALIGN   falign ;  \ 12.6.2.1205
+
+\ ------ Memory Access by 32-bit Floating-point Numbers ----------------------
+
+: SF@  \ ( adr -- f: -- f ) 12.6.2.2203 fetch small fp-number from address
+C  mferr(mfin(1);mffout(1));
+C  mffpush(*(mfSFlt*)(mfpop())); ;
+
+: SF!  \ ( adr -- f: f -- ) 12.6.2.2202 store small fp-number at address
+C  mferr(mfin(1);mffin(1));
+C  *(mfSFlt*)(mfpop()) = (mfSFlt)mffpop(); ;
+
+: SFLOAT+   \ ( a1 -- a2 ) 12.6.2.2207 add small-fp size to address
+C  mferr(mfin(1));
+C  mftos += sizeof(mfSFlt); ;
+
+: SFLOATS  \ ( n -- nf ) 12.6.2.2208 size of n small fp-numbers
+C  mferr(mfin(1));
+C  mftos *= sizeof(mfSFlt); ;
+
+: SFALIGNED  \ ( a -- af ) 12.6.2.2206 next small-fp aligned address
+C  mferr(mfin(1));
+C  mftos=(mftos+sizeof(mfSFlt)-1)&-sizeof(mfSFlt); ;
+
+: SFALIGN  \ ( -- ) 12.6.2.2204 small float align data-space pointer
+   _dp @ sfaligned _dp ! ;
+
+\ ------ FP-Number Output ----------------------------------------------------
+
+6 VARIABLE __PREC  \ actual digits for output
+6 VARIABLE __SGNF  \ significant digit for output, zeroes trimmed
+
+: PRECISION  \ ( -- u ) 12.6.2.2035 actual digits for numeric fp output
+   __prec @ ;
+
+: SET-PRECISION  \ ( p -- ) 12.6.2.2200 set fp output digits
+   1 max 20 min __prec ! ;  \ max 18 for 52-bit mantissa
+
+20 BUFFER: __FPAD  \ ( -- adr ) MF numeric output string for mantissa
+   
+: _REPRESENT  \ ( d: a u f: fp -- d: e s f ) MF convert fp to string
+C  mferr(mfin(2);mfout(2);mffin(1));
+C  mfFlt fp=mffpop(),m,ex,n; mfChar *a=(mfChar*)mfsec,c,u=mftos; int s=0,f=-1;
+C  memset(a,'0',u), mfsec=1, mftos=(signbit(fp)?-1:0), fp=copysign(fp,+1.);
+C  if (!isnormal(fp)) { if (fp==0.) goto lr;
+C   if (isnan(fp)) s=min(3,u),memcpy(a,"nan",s); else
+C   if (isinf(fp)) s=min(3,u),memcpy(a,"inf",s);
+C   f=0; goto lr; }
+C  m=log10(fp), ex=1.+floor(m), m=pow(10.,m-ex), n=pow(10.,u);
+C  m=round(m*n); 
+C  if (m==n) { ex+=1., m/=10.; } if (m==0.) { ex=0.; } mfsec=(mfCell)ex;
+C  for (s=u-1;s>=0;s--) { c=(mfChar)fmod(m,10.), a[s]=c+'0', m/=10.; }  
+C  for (s=u;s>0;s--) { if (a[s-1]!='0') break; }
+C lr: mfpush(f), mfpush(s);
+   __sgnf ! ;
+
+: REPRESENT  \ ( d: a u f: fp -- d: e s f ) 12.6.1.2143 convert fp to string
+   base @ 10 <> IF -40 throw THEN
+   _represent ;
+
+: __(FCHK)  \ ( f:r -- f:r d: e f ) MF factor
+   __fpad precision _represent swap IF '-' emit THEN
+   dup ~IF nip __fpad __sgnf @ type THEN ;
+
+: __(MANT)  \ ( a u up -- ) MF print a/u with decimal point after up characters
+   2>r dup r@ type '.' emit r@ + 2r> - type ;
+
+: __(EXP)  \ ( e -- ) MF print exponent
+   'E' emit 0 .r ;
+
+: __FS. \ ( e u -- ) factor
+   __fpad swap 1 __(mant) 1- __(exp) ;
+
+: FS.  \ ( f:r -- ) 12.6.2.1613 print fp-number in scientific notation
+   __(fchk) IF precision __fs. THEN space ;
+
+: GS.  \ ( f:r -- ) MF print trimmed fp-number in scientific notation
+   __(fchk) IF __sgnf @ __fs. THEN space ;
+
+: __FE. \ ( e u -- ) factor
+   >r 1- s>d 3 fm/mod swap 1+ __fpad r> rot __(mant) 3 * __(exp) ;
+
+: FE.  \ ( f:r -- ) 12.6.2.1513 print fp-number in engineering notation
+   __(fchk) IF precision __fe. THEN space ;
+
+: GE.  \ ( f:r -- ) MF print trimmed fp-number in engineering notation
+   __(fchk) IF __sgnf @ __fe. THEN space ;
+
+: _F.  \ ( f:r -- ) MF print trimmed fp-number in fixed-point notation 
+   fdup __(fchk) ~IF fdrop EXIT THEN
+   dup negate precision >= over precision > or
+   IF fdrop __sgnf @ __fs. EXIT THEN    
+   dup 0<=  \ f e
+   IF __sgnf @ over - precision >
+     IF precision dup >r + set-precision
+	    fabs __fpad precision _represent 2drop
+        r> set-precision
+	 ELSE fdrop THEN       
+	 '0' emit '.' emit negate FOR '0' emit NEXT __fpad __sgnf @ type
+   ELSE
+	 fdrop __fpad swap dup __sgnf @ max swap __(mant)
+   THEN ;
+
+: F.  \ ( f:r -- ) 12.6.2.1427 print fp-number in fixed-point notation 
+   _f. space ;  
+
+\ ------ FP-Number Input -----------------------------------------------------
+
+: >FLOAT  \ ( a u -- f, true: r: -- fp ) 12.6.1.0558 convert string to float
+   base @ 10 <> IF 2drop false EXIT THEN
+C  mferr(mfin(2);mffout(1)); 
+C  mfFlt fp=0., n=NAN, in=INFINITY; int u=mfpop(), i=u, s=0, es=1;
+C  char *a=(char*)mftos, b[68]={0}, *m=b, *e, c;
+C  mftos=0; if ((u<0)||(u>=68)) return; else memcpy(b,a,u);
+C  while(i>0) { c=toupper(b[--i]); if (c=='D') c='E'; b[i]=c;
+C    if (c!=' ') { s=1; } if (c==' ') es=0; }   
+C  if (s==0) { goto ok; } if (es==0) return;
+C  c=*m; if ((c=='-')||(c=='+')) m++,u--; if (!*m) return;
+C  if (!memcmp(m,"NAN",3)) {
+C    fp = (c=='-' ? copysign(n,-1.L) : copysign(n,+1.L)); goto ok; }
+C  if (!memcmp(m,"INF",3)) {
+C    fp = (c=='-' ? copysign(in,-1.L) : copysign(in,+1.L)); goto ok; }
+C  i=(int)strcspn(m,"E-+"), e=m+i, c=*e, s=*(e+1), es=*(e+2);
+C  if (c=='E') { if (!s) *++e='0',*++e=0; else
+C    if (((s=='-')||(s=='+'))&&!es) e++,*++e='0',*++e=0; } else 
+C  if (c=='-'||c=='+') memmove(e+1,e,u-1), *e='E';
+C  fp=strtod(b,&m); if (*m) return;
+C ok: mftos=-1, mffpush(fp); ;
+
+\ ------ Compiler Extension --------------------------------------------------
+
+: _[FLIT]  \ ( f -- n ) runtime: cell literal
+C  mffpush(*(mfFlt*)mfip); 
+C  mfip+=MFFLTSIZE; ;
+
+: F,  \ ( f -- ) MF compile fp-number f to dataspace, increment dp
+   here f! 1 floats _dp +! ;
+
+: FLITERAL  \ ( f -- ) 12.6.1.1552 compile-time: fp-number literal
+   [,] _[flit] f, ; IMMEDIATE COMPILE-ONLY   
+
+: FCONSTANT  \ ( f 'name' -- |r -- f) 12.6.1.1492 fp-number constant
+   create f, ['] f@ _<does ;
+   
+: FVARIABLE  \ ( -- |r -- adr ) 12.6.1.1630 fp-number variable
+   0. create f, ;
+
+: FVALUE  \ ( f 'name' |r -- f ) 12.6.2.1628 fp-number value
+   ['] f@ ['] f! ['] f+ _(value) f, ;
+
+\ ------ Floats in Data Structures -------------------------------------------
+
+[DEFINED] +FIELD [IF]
+
+: FFIELD:   faligned 1 floats +field ;   \ 12.6.2.1517
+
+: SFFIELD:  sfaligned 1 sfloats +field ; \ 12.6.2.2206.40
+
+: DFFIELD:  dfaligned 1 dfloats +field ; \ 12.6.2.1207.40
+
+[THEN]
+
+\ ------ System Integration --------------------------------------------------
+
+: __FEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -40 OF ." invalid BASE for floating point conversion" EXIT ENDOF
+     -44 OF ." floating-point stack overflow" EXIT ENDOF
+     -45 OF ." floating-point stack underflow" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __FPROMPT  \ ( -- ) display fp-stack in QUIT
+   fdepth IF base @ >r decimal  
+     ." f: " fdepth FOR fdepth 1- n - fpick f. NEXT ." | "
+     r> base ! THEN
+   deferred _prompt ;
+IS _PROMPT
+
+: __FENVIRONMENT?  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" FLOATING-STACK" str= IF 2drop i" mfpush(mffstsize);" true EXIT THEN
+   2dup s" MAX-FLOAT" str= IF 2drop i" mffpush(DBL_MAX);" true EXIT THEN
+   2dup s" FLOATING" str= IF 2drop true true EXIT THEN
+   2dup s" FLOATING-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?
+
+: _FLOAT?  \ ( a u -- t f: r | 0 ) MF convert to fp-number
+   _parsed 2@ >float ;
+
+: __FBOOT  \ ( -- ) MF extend boot sequence to recognize double numbers
+   deferred _boot
+   ['] >float ['] noop ['] fliteral s" REC-FLOAT" named recognizer ;
+IS _BOOT

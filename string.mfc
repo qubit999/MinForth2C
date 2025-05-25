@@ -1,0 +1,102 @@
+\ ============================================================================
+\ MINFORTH V3.4 STRING WORDSET
+\ ============================================================================
+\ provided "as is" as per license conditions in file mflicense.txt 
+
+#INCLUDE core.mfc
+#INCLUDE search.mfc
+\ already in CORE:
+\ SLITERAL /STRING
+C
+C #define MFSTRING
+
+\ ------ Fixed string operations ---------------------------------------------
+
+: COMPARE  \ ( adr1 u1 adr2 u2 -- f ) 17.6.1.0935 compare two strings
+C  mferr(mfin(4));
+C  char *a1,*a2; unsigned int um,u1,u2;
+C  u2=mfpop(),a2=(char*)mfpop(),u1=mfpop(),a1=(char*)mftos,um=min(u1,u2);
+C  for (unsigned int i=0;i<um;i++) {
+C    if (a1[i]!=a2[i]) { mftos=(a1[i]<a2[i]?-1:1); return; } }
+C  if (u1==u2) mftos=0; else mftos=(u1<u2?-1:1); ;
+
+: SEARCH  \ ( a1 u1 a2 u2 -- a3 u3 f ) search substring a2|u2 in string a1|u1
+C  mferr(mfin(4));
+C  char *a1,*a2; unsigned int u1,u2,i;
+C  u2=mfpop(), a2=(char*)mftos, u1=mfsec, a1=(char*)mfthd, mftos=0;
+C  if (u1<u2) return;
+C  for (i=0;i<=u1-u2;a1++,i++)
+C    if (!memcmp(a1,a2,u2))
+C    { mfthd=(mfCell)a1,mfsec-=i,mftos=-1; break; } ;    
+
+: CMOVE  \ ( from to n -- ) 17.6.1.0910 copy n chars from low to high
+   rot swap 1 FOR> n c@ over c! 1+ NEXT drop ;
+
+: CMOVE>  \ ( from to n -- ) 17.6.1.0920 copy n chars from high to low
+   tuck + -rot 1 <FOR 1- n c@ over c! NEXT drop ;
+
+: -TRAILING  \ ( a u1 -- a u2 ) 17.6.1.0170 trim trailing zeros
+   2dup 1 <FOR n c@ bl <> IF BREAK THEN 1- NEXT ;
+
+: BLANK  \ ( a u -- ) 17.6.1.0780 fill address range with blanks
+   bl fill ;
+
+: PARSE-STRING  \ ( a u -- a' u' ap up ) MF parse within given string (a u)
+C  mferr(mfin(2);mfout(2));
+C  mfChar *a=(mfChar*)mfsec,*ap; mfUCell u=mftos;
+C  while (u) { if (*a>32) break; else a++,u--; } ap=a;
+C  while (u) { if (*a<=32) break; else a++,u--; }
+C  mfsec=(mfCell)a, mftos=u, mfpush(ap), mfpush(a-ap); ;
+
+\ ------ Text macros ---------------------------------------------------------
+
+VARIABLE __REPWL  \ wordlist of strings to replace
+
+: REPLACES  \ ( a1 u1 a2 u2 -- ) 17.6.2.2141 set string a1 to replace a2
+   dup ~IF 2drop 2drop EXIT THEN
+   2dup __repwl @ _searchnt IF 
+     >r 2over r> execute compare ~IF -79 THROW THEN THEN
+   get-current >r __repwl @ set-current caps @ >r caps off
+   named create tuck here _place 2 + allot align 
+   r> caps ! r> set-current ['] count _<does ;
+
+: UNESCAPE  \ ( from u1 to -- to u2 ) 17.6.2.2375 replace % by %% in buffer to
+   dup 2swap 1 FOR>
+     n c@ dup '%' = IF over c! char+ '%' THEN over c! char+
+   NEXT over - ;
+
+: SUBSTITUTE \ ( a1 u1 b2 u2 -- b2 u3 n ) 17.6.2.2255 %-delimited substitution
+C  mferr(mfin(4);mfout(1));
+C  int u2=mfpop(), u1=mfsec, u, ub=0, n=0, ur;
+C  char *b2=(char*)mftos, *a1=(char*)mfthd, c, *as, *ap, *ar;
+C  mftos=-78; if (a1==b2) return;
+C  for (u=0; u<u1; u++) { c=a1[u];
+C    if (ub>=u2) return;
+C    if (c=='%') { as=a1+u+1, ap=memchr(as,'%',u1-u-1);
+C      if (!ap) goto nx; // single %
+C      if (ap==as) { u++; goto nx; } // empty %%
+C      mfpush(as), mfpush(ap-as);
+       __repwl @ _searchnt  \ 0 | xt f
+C      if (!mfpop()) goto nx;
+       execute  \ ar ur
+C      ur=mfpop(), ar=(char*)mfpop();
+C      if (ur<=u2-ub) memcpy(b2+ub,ar,ur); else return; // overflow
+C      n++, ub+=ur, u=ap-a1; continue; }
+C nx: b2[ub++]=c; }
+C  mfthd=(mfCell)b2, mfsec=ub, mftos=n; ;
+
+\ ------ System Integration --------------------------------------------------
+
+: __SEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -78 OF ." SUBSTITUTE error" EXIT ENDOF
+	 -79 OF ." REPLACES error" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __SBOOT  \ ( -- ) MF initialize wordlist of strings to replace 
+   deferred _boot
+   wordlist __repwl ! ;
+IS _BOOT

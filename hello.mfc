@@ -1,0 +1,32 @@
+#INCLUDE core.mfc \ MINFORTH kernel
+\ optional:
+#INCLUDE except.mfc \ EXCEPTION wordset
+#INCLUDE facility.mfc \ FACILITY wordset
+#INCLUDE double.mfc \ DOUBLE-NUMBER wordset
+#INCLUDE float.mfc \ FLOATING-POINT NUMBER wordset
+#INCLUDE complex.mfc \ COMPLEX-NUMBER wordset
+#INCLUDE memory.mfc \ MEMORY-ALLOCATION wordset
+#INCLUDE search.mfc \ SEARCH-ORDER wordset
+#INCLUDE locals.mfc \ LOCALS wordset
+#INCLUDE string.mfc \ STRING wordset
+#INCLUDE file.mfc \ FILE-ACCESS wordset
+#INCLUDE block.mfc \ BLOCK wordset
+#INCLUDE tools.mfc \ PROGRAMMING-TOOLS wordset
+
+#INCLUDE functions.mfc
+
+VARIABLE result1
+
+: INIT-SYSTEM   ." Initializing system..." CR ;
+: CLEANUP      ." Cleaning up..." CR ;
+
+: MAIN
+    INIT-SYSTEM
+    5 INCREMENT result1 !
+    22 INCREMENT CHECK_LARGER_THAN_20
+    22 WHILE_LOOP_TEST result1 !
+    result1 @ . ." Result from while loop" CR
+    5 5 CALC_SUM_PLUS_5_5
+    CLEANUP
+    BYE
+;

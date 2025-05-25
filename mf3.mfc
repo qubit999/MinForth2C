@@ -1,0 +1,108 @@
+\* ===========================================================================
+   MinForth V3.4 - Interactive Forth System (CLI)
+   ===========================================================================
+*\
+
+\ ------ MinForth Wordsets ---------------------------------------------------
+
+#INCLUDE core.mfc  \ MINFORTH CORE system always req'd
+#INCLUDE memory.mfc
+#INCLUDE search.mfc
+#INCLUDE string.mfc  \ req search
+#INCLUDE double.mfc
+#INCLUDE float.mfc
+#INCLUDE complex.mfc  \ req float
+#INCLUDE locals.mfc  \ opt: double float complex
+#INCLUDE file.mfc  \ req: search memory
+#INCLUDE block.mfc  \ req: file
+#INCLUDE facility.mfc  \ req: file
+#INCLUDE except.mfc  \ opt: facility
+#INCLUDE tools.mfc  \ opt: double float complex locals facility
+
+\ ------ Optional Wordsets ---------------------------------------------------
+
+#INCLUDE overlay.mfc  \ req: file
+#INCLUDE bleditor.mfc  \ req block facility
+
+\ ------ Start MinForth System -----------------------------------------------
+
+: MAIN     \ ( -- ) MF Hilevel Forth system, called by C main() function
+   _boot   \ initialize system
+   _abort  \ start Forth text interpreter
+   bye ;   \ clean system and return to OS
+
+\ ====== THE END =============================================================
+
+\ Next: helper words for core debugging
+
+\ ------ Tester --------------------------------------------------------------
+
+VARIABLE _STDS VARIABLE _STDE
+-1 VARIABLE _VERBOSE 
+
+: _ATB  _limit 20 cells - ; \ assertion buffer
+ 
+: TESTING	\ ( -- ) TALKING COMMENT.
+   source _verbose @
+   IF dup >r type cr r> >in ! ELSE >in ! drop '*' emit THEN ;
+
+: T{ 
+   depth _stds ! ;
+	
+: ->
+   depth _stde ! _atb _stde @ _stds @ - 20 min cell FOR> n ! NEXT ;  
+	
+: __}T  ( a u - )
+   cr source type type ;	
+	
+: }T
+   depth _stde @ - 
+   dup 0< IF s"  ?? too many stack elements" __}t abort THEN
+   0> IF s"  ?? too few stack elements" __}t abort THEN
+   _stde @ _stds @ - 20 min
+   FOR _atb n cells + @ <>
+     IF s"  ?? wrong stack element #" __}t _stde @ _stds @ - n - . abort THEN
+   NEXT ;
+
+\s ------ FLOAD without FILES wordset -----------------------------------------
+
+: FLOAD  \ ( a u -- .. )
+C  char fbuf[MFIB]; int l, ln=0, xc=0;
+   parse-name i" mfpush(fbuf);" _place
+C  FILE* h=fopen(fbuf+1,"r"); if (!h) mfthrow(-38);
+   _src>r i" mfpush(h);" _srcid! 0 blk !
+C  while (fgets(fbuf,MFIB,h)) {
+C    ln+=1, l=strlen(fbuf), l-=fbuf[l-1]==0xA, mfpush(fbuf), mfpush(l);
+\    cr 2dup type
+     _src2! 0 >in ! ['] _interpret CATCH
+	 ^IF _excsrc ." in file line " i" mfprintn(ln);" THEN
+C    xc=mfpop(); if (xc) break; }
+   _r>src
+C  fclose(h); mfthrow(xc); ;
+
+\ ------ Hex DUMP without TOOLS wordset --------------------------------------
+
+: $DUMP  \ ( adr u -- ) 15.6.1.1280 memory range hex dump
+   4095 and base @ rot rot hex over + over -16 and  \ b adrlo adrhi adr
+   cr ."     Address:   " 16 FOR n u. space NEXT ." 0123456789ABCDEF"
+   BEGIN 2dup u>
+   WHILE cr dup 12 u.r space '|' emit dup >r 
+         16 BEGIN swap 2over 2 pick rot rot within 
+                  IF dup c@ 0 <# # # #> ELSE s"   " THEN type
+				  1+ swap 1- dup 4 mod
+				  IF bl ELSE '|' THEN emit dup
+           ~UNTIL 2drop space r>
+         16 BEGIN swap 2over 2 pick rot rot within
+                  IF dup c@ dup bl 128 within 0= IF drop '.' THEN emit
+                  ELSE space THEN 1+ swap 1- dup
+           ~UNTIL drop
+   REPEAT 2drop drop base ! ;
+
+\ ------ WORDS without TOOLS wordset -----------------------------------------
+
+: $WORDS  \ ( -- ) 15.6.1.2465 display first wordlist in search order 
+   cr _context @ @
+   BEGIN dup @
+   WHILE dup _>name count type space @
+   REPEAT drop ;
+   

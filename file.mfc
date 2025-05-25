@@ -1,0 +1,315 @@
+\ ============================================================================
+\  MINFORTH V3 FILE WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+#INCLUDE core.mfc
+#INCLUDE search.mfc
+#INCLUDE memory.mfc
+C
+C #define MFFILE
+C
+C #ifdef __linux__
+C # define O_TEXT 0
+C # define O_BINARY 0
+C # define __USE_LARGEFILE64
+C #endif
+C
+C #ifdef __clang__
+C # define lseek(x,y,z) _lseek(x,y,z)
+C # define unlink(x) _unlink(x)
+C # define creat(x,y) _creat(x,y)
+C # define open(x,y) _open(x,y)
+C # define close(x) _close(x)
+C # define read(x,y,z) _read(x,y,z)
+C # define write(x,y,z) _write(x,y,z)
+C #endif
+
+\ ------ File Access Modes ---------------------------------------------------
+
+: R/O  \ ( -- fam ) 11.6.1.2054 read-only line-oriented access mode
+C  mferr(mfout(1));
+C  mfpush(O_RDONLY | O_TEXT); ;
+
+: W/O  \ ( -- fam ) 11.6.1.2425 read-only line-oriented access mode
+C  mferr(mfout(1));
+C  mfpush(O_WRONLY | O_TEXT); ;
+
+: R/W  \ ( -- fam ) 11.6.1.2056 read-write line-oriented access mode
+C  mferr(mfout(1));
+C  mfpush(O_RDWR | O_TEXT); ;
+
+: BIN  \ ( fam -- bfam ) 11.6.1.0765 modify access mode for binary access 
+C  mferr(mfin(1));
+C  mftos &= ~O_TEXT, mftos |= O_BINARY; ;
+
+\ ------ File Conditions -----------------------------------------------------
+
+: FILE-STATUS  \ ( a u -- x ior ) 11.6.2.1524 get file access mode
+C  mferr(mfin(2));
+C  struct stat fs; int u=min(MFIB,llabs(mftos)); char *a=(char*)mfsec,buf[MFIB]; 
+C  strncpy(buf,a,u), buf[u]=0; 
+C  if(stat(buf,&fs)) mfsec=0,mftos=-67; else mfsec=fs.st_mode,mftos=0; ;
+
+: EXIST-FILE  \ ( a u -- f ) MF check if file is there 1/-1=read-/writable
+   file-status ~IF  
+C  if (mftos&S_IWRITE) mftos=-1; else
+C  if (mftos&S_IREAD)  mftos=1;  else mftos=0;
+   THEN ;
+  
+: FILE-POSITION  \ ( fid -- ud ior ) 11.6.1.1520 get current file pointer
+C  mferr(mfin(1);mfout(2));
+C  mfCell p=lseek(mftos,0,SEEK_CUR);
+C  mftos=p, mfpush(0), mfpush(p==-1 ? -65 : 0); ;
+
+: FILE-SIZE  \ ( fid -- ud ior ) 11.6.1.1522 get file size
+C  mferr(mfin(1);mfout(2));
+C  mfCell e, p=lseek(mftos,0,SEEK_CUR);
+C  if (p==-1) { mfpush(0), mfpush(-66); return; }
+C  e=lseek(mftos,0,SEEK_END), lseek(mftos,p,SEEK_SET);
+C  mftos=e, mfpush(0), mfpush(0); ;
+
+: REPOSITION-FILE  \ ( ud fid -- ior ) 11.6.1.2142 set file pointer
+C  mferr(mfin(3));
+C  mfCell r,h=mfpop(); mfdrop;
+C  r=lseek(h,mftos,SEEK_SET);
+C  mftos = (r==-1 ? -73 : 0); ;
+
+: RESIZE-FILE  \ ( ud fid -- ior ) 11.6.1.2147 change file size
+C  mferr(mfin(3));
+C  mfCell r,h=mfpop(); mfdrop;
+C #ifdef _WIN32
+C  r=_chsize(h,mftos);
+C #else
+C  r=ftruncate(h,mftos);
+C #endif
+C  mftos = (r==-1 ? -74 : 0); ;
+
+: RENAME-FILE  \ ( ao uo an un -- ior ) 11.6.2.2130 rename file or directory
+C  mferr(mfin(4));
+C  int un=min(MFIB,llabs(mftos)), uo=min(MFIB,llabs(mfthd));
+C  char *an=(char*)mfsec, *ao=(char*)mffth, buf[2*MFIB+1];
+C  strncpy(buf,ao,uo), buf[uo]=0, mf2drop;
+C  strncpy(buf+uo+1,an,un), buf[uo+un+1]=0, mfdrop;
+C  mftos = (rename(buf,buf+uo+1) ? -72 : 0); ;
+
+: DELETE-FILE  \ ( a u -- ior ) 11.6.1.1190 delete file or directory
+C  mferr(mfin(2));
+C  int u=min(MFIB,llabs(mftos)); char *a=(char*)mfsec,buf[MFIB]; mfdrop;
+C  strncpy(buf,a,u), buf[u]=0;
+C  mftos = (unlink(buf) ? -64 : 0); ;
+
+\ ------ Open & Close Files --------------------------------------------------
+
+\ standard stream ids
+
+: STDIN  \ ( -- fid ) MF standard terminal input id 
+C  mferr(mfout(1));
+C  mfpush(0); ;
+
+: STDOUT  \ ( -- fid ) MF standard terminal output id
+C  mferr(mfout(1));
+C  mfpush(1); ;
+
+: STDERR  \ ( -- fid ) MF standard error messaging output id
+C  mferr(mfout(1));
+C  mfpush(2); ;
+
+: OPEN-FILE  \ ( a u fam -- fid ior ) 11.6.1.1970 open named file
+C  mferr(mfin(3));
+C  int fam=mfpop(), u=min(MFIB,llabs(mftos)); char *a=(char*)mfsec,buf[MFIB];
+C  strncpy(buf,a,u), buf[u]=0;
+C  u = open(buf,fam);
+C  if (u==-1) mfsec=0,mftos=-69; else mfsec=u,mftos=0; ;
+
+: CREATE-FILE  \ ( a u fam -- fid ior ) 11.6.1.1010 create and open named file
+C  mferr(mfin(3));
+C  int fam=mfpop(), u=min(MFIB,llabs(mftos)); char *a=(char*)mfsec,buf[MFIB];
+C  strncpy(buf,a,u), buf[u]=0;
+C  u = creat(buf,S_IREAD|S_IWRITE);
+C  if (u==-1) { mfsec=-1, mftos=-63; return; }
+C  close(u), mfsec=open(buf,fam), mftos=0; ;
+
+: FLUSH-FILE  \ ( fid -- ior ) 11.6.2.1560 flush internal file buffer
+C  mferr(mfin(1));
+C #ifdef _WIN32
+C  mftos = (_commit(mftos) ? -68 : 0); 
+c #else
+C  mftos = (fsync(mftos) ? -68 : 0);
+C #endif
+   ;
+
+: CLOSE-FILE  \ ( fid -- ior ) 11.6.1.0900 close file
+C  mferr(mfin(1));
+C  mftos = (close(mftos) ? -62 : 0); ;
+
+\ ------ Write to Files ------------------------------------------------------
+
+: WRITE-FILE  \ ( b u fid -- ior ) 11.6.1.2480 write buffer to file
+C  mferr(mfin(3));
+C  mfthd = write(mftos,(char*)mfthd,mfsec); mf2drop;
+C  mftos = (mftos==-1 ? -75 : 0); ;
+
+: WRITE-LINE  \ ( a u fid -- ior ) 11.6.1.2485 write line to file
+C  mferr(mfin(3));
+C  mfthd = write(mftos,(char*)mfthd,mfsec);
+C  write(mftos,"\n",1); mf2drop;
+C  mftos = (mftos==-1 ? -76 : 0); ;
+
+\ ------ Read from Files -----------------------------------------------------
+
+: READ-FILE  \ ( b u1 fid -- u2 ior ) 11.6.1.2080 read to buffer from file
+C  mferr(mfin(3));
+C  mfthd = read(mftos,(char*)mfthd,mfsec); mfdrop;
+C  mftos = (mfsec==-1 ? -70 : 0); ;
+
+: READ-LINE  \ ( b u fid -- ur f ior ) 11.6.1.2090 read line from file
+C  mferr(mfin(3));
+C  char *b=(char*)mfthd; int fid=mftos, u=mfsec, ur=0, f=-1, c=0;
+C  while (ur<u) { c=read(fid,b,1);
+C   if (c==-1) { mftos=-71; return; }
+C   if (c==0) { f=-(ur>0); break; }
+C   if (*b==10) { *b=0; break; }  
+C   if (*b==13) { *b=0; c=read(fid,b,1);
+C     if (c==-1) { mftos=-71; return; }
+C     if (c==0)  break;
+C     if (*b==10) { *b=0; break; }
+C     else { *b=0; lseek(fid,-1,SEEK_CUR); break; } }
+C     b++,ur++; }
+C  mfthd=ur, mfsec=f, mftos=0; ;
+
+: LIST-FILE  \ ( a u -- ) MF print text file
+   r/o open-file throw 0 swap
+   BEGIN here _#ib pluck read-line throw
+   WHILE cr rot 1+ dup 0 .r ." : " -rot here swap type space
+   REPEAT rot 2drop close-file throw ;
+
+\ ------ File Sources --------------------------------------------------------
+
+VARIABLE __FILEWL
+
+: FILES  \ ( -- ) MF vocabulary for file names defined as MARKER
+   __filewl @ _context ! ;
+   
+VARIABLE __FILE  \ MF temporary hold of file name marker
+
+\ file source struct {sln,pos,nam}
+3 CELLS BUFFER: _SLN  \  MF current source line 
+
+: __POS  _sln cell+ ; \ MF file position of source line start
+
+: __NAM  _sln 2 cells + ; \ MF file name marker
+
+: __FSRC>R  \ ( -- r: b l p n ) MF save file input source spec
+   _sln 3 cell FOR> n @ >r NEXT ;
+
+: __R>FSRC  \ ( r: b l p n -- ) MF restore file input source spec
+   _sln 3 cell <FOR r> n ! NEXT ;
+
+\ ------ Including source files ----------------------------------------------
+
+: FORGET-INCLUDED  \ ( -- ) MF forget compiled words of last included  
+   __filewl @ @ dup @ IF 
+     _>cfa execute previous -1 cells allot here @ set-current
+   ELSE -300 THROW THEN ; 
+
+: __INCLUDE  ( fid -- )  \ MF include file spec'd by INCLUDE/D or REQUIRE/D
+C  char buf[MFIB];   
+   _src>r __fsrc>r i" mfpush(buf), mfpush(MFIB);" _src2! 
+   _srcid! blk off _sln off __file @ __nam !
+   BEGIN refill dup WHILE drop ['] _interpret catch ?dup IF BREAK THEN REPEAT
+   ^IF _excsrc ." in " __nam @ ?dup
+       IF _<cfa _>name count type space THEN ." line " decimal _sln @ .
+   THEN source-id close-file drop __r>fsrc _r>src throw ;
+
+: __ISINCLUDED?  \ ( a u -- a u 0 | a u xt t ) MF check file already included 
+   caps @ >r caps off 2dup also files _find-word previous r> caps ! ;
+
+: __ADDINCLUDED  \ ( a u -- a u xt ) MF create filename as marker
+   caps @ >r caps off 2dup named 
+   get-current also files definitions dup , marker previous set-current
+   r> caps ! _last @ _>cfa ;
+   
+: INCLUDE-FILE  \ ( fid -- ) 11.6.1.1717 include already open file
+   __file off __include ;
+
+: INCLUDED  \ ( a u -- ) 11.6.1.1718 open and include named file
+   __isincluded? ~IF __addincluded THEN __file !
+   r/o open-file throw __include ;   
+
+: REQUIRED  \ ( a u -- ) 11.6.2.2144.50 include file if not already included
+   __isincluded? IF drop 2drop EXIT THEN __addincluded __file !
+   r/o open-file throw __include ;
+
+: INCLUDE  \ ( 'name' -- ) 11.6.2.1714 include source file
+   parse-name included ; 
+   
+: REQUIRE  \ ( 'name' -- ) 11.6.2.2144.10 require source file
+   parse-name required ;
+
+\ ------ Kernel Extensions ---------------------------------------------------
+
+: __FLREFILL  \ ( -- f ) 11.6.2.2125 refill source file line
+   source-id 0> ~IF deferred refill EXIT THEN
+   source-id file-position drop drop __pos ! _sln incr
+   source drop _#ib source-id read-line rot _srclen ! 0= and
+   >in off ;
+IS REFILL
+
+: __FL(  \ ( -- ) 11.6.1.0080 extend core (
+   source-id 0= blk @ 0= and IF deferred ( EXIT THEN
+   BEGIN ')' parse + c@ ')' <> WHILE refill ~IF -39 throw THEN REPEAT ;
+IS (
+
+DEFER: \S  \ ( -- ) ignore rest of file source
+   _srclen @ >in ! source-id file-size throw source-id reposition-file throw ;
+   IMMEDIATE
+
+: __FLSVINPUT  \ ( -- xn..x1 n ) 6.2.2182 get file input source spec
+   _sln 3 cell FOR> n @ NEXT 
+   deferred save-input 3 + ;
+IS SAVE-INPUT
+
+: __FLRSTINPUT  \ ( xn..x1 n -- f ) 6.2.2148 restore file input source spec
+   8 <> over source-id <> or IF true EXIT THEN
+   5 deferred restore-input drop __pos @ >r _sln 3 cell <FOR n ! NEXT
+   __pos @ r> = IF false EXIT THEN
+   __pos @ s>d source-id reposition-file drop
+   -1 blk @ IF blk ELSE _sln THEN +!
+   >in @ refill invert swap >in ! ;
+IS RESTORE-INPUT
+
+: __FLEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -39 OF ." unexpected end of file" EXIT ENDOF
+     -62 OF ." CLOSE-FILE error" EXIT ENDOF
+	 -63 OF ." CREATE-FILE error" EXIT ENDOF
+     -64 OF ." DELETE-FILE error" EXIT ENDOF
+     -65 OF ." FILE-POSITION error" EXIT ENDOF
+     -66 OF ." FILE-SIZE error" EXIT ENDOF
+     -67 OF ." FILE-STATUS error" EXIT ENDOF
+     -68 OF ." FLUSH-FILE error" EXIT ENDOF
+     -69 OF ." OPEN-FILE error" EXIT ENDOF	
+     -70 OF ." READ-FILE error" EXIT ENDOF	
+     -71 OF ." READ-LINE error" EXIT ENDOF	
+     -72 OF ." RENAME-FILE error" EXIT ENDOF	
+     -73 OF ." REPOSITION-FILE error" EXIT ENDOF	
+     -74 OF ." RESIZE-FILE error" EXIT ENDOF	
+     -75 OF ." WRITE-FILE error" EXIT ENDOF	
+     -76 OF ." WRITE-LINE error" EXIT ENDOF	
+     -300 OF ." INCLUDED error" EXIT ENDOF	
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __FLENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" FILE" str= IF 2drop true true EXIT THEN
+   2dup s" FILE-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?
+
+: __FLBOOT
+   deferred _boot
+   wordlist __filewl ! ;
+IS _BOOT

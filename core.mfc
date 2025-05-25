@@ -1,0 +1,1485 @@
+\ ============================================================================
+\   MINFORTH V3.4 CORE DEFINITIONS
+\ ============================================================================
+
+\ MinForth core words for the MF2C transpiler to build a standard Forth system
+
+C
+C #define MFCORE
+
+\ ------ Forward Declarations ------------------------------------------------
+
+DEFER THROW  \ ( xc -- ) THROW forward declaration
+
+\ ------ Return-Stack --------------------------------------------------------
+
+: _RP!  \ ( u -- ) set return-stack pointer
+C  mferr(mfin(1);mfwithin(0,mftos,mfrstsize));
+C  mfrp=mfrst+mfpop(); ;
+
+: _RDEPTH  \ ( -- u ) MF return stack depth
+C  mferr(mfout(1));
+C  mfpush(mfrp-mfrst); ;
+
+: >R  \ ( n -- r: n ) 6.1.0580 move TOS to return-stack
+C  mferr(mfin(1);mfrout(1));
+C  mfrpush(mfpop()); ; INLINE
+
+: R>  \ ( r: n -- n r: ) 6.1.2060 move RTOS to data-stack
+C  mferr(mfrin(1);mfout(1));
+C  mfpush(mfrpop()); ; INLINE
+
+: R@  \ ( r: n -- n r: n ) 6.1.2070 copy RTOS to data-stack
+C  mferr(mfrin(1);mfout(1));
+C  mfpush(mfrtos); ; INLINE
+
+: RDROP  \ (r: n -- r: ) MF drop RTOS
+C  mferr(mfrin(1));
+C  mfrdrop; ; INLINE
+
+: RPICK  \ ( r: nm..n0 | i -- r: ni..n0 | ni ) MF pick ni from rstack
+C  mferr(mfin(1);mfrin(abs((int)mftos)+1));
+C  mftos=mfrp[-mftos]; ; INLINE
+
+\ ------ Data-Stack ----------------------------------------------------------
+
+: _SP!  \ ( u -- ) set data-stack pointer
+C  mferr(mfin(1);mfwithin(0,mftos,mfstksize));
+C  mfsp=mfstk+mftos; ;
+
+: DEPTH  \ ( -- u ) 6.1.1200 data stack depth
+C  mferr(mfout(1));
+C  mfCell u=mfsp-mfstk;
+C  mfpush(u); ; INLINE
+
+: DROP  ( n -- ) \ 6.1.1260 discard TOS
+C  mferr(mfin(1));
+C  mfdrop; ; INLINE
+
+: SWAP  \ ( a b -- b a ) 6.1.2260 exchange TOS with SECOND
+C  mferr(mfin(2));
+C  mfCell a=mfsec;
+C  mfsec=mftos, mftos=a; ; INLINE
+
+: ROT  \ ( a b c -- b c a) 6.1.2160 rotate top three stack elements
+C  mferr(mfin(3));
+C  mfCell a=mfthd;
+C  mfthd=mfsec,mfsec=mftos,mftos=a; ; INLINE
+
+: DUP  \ ( n -- n n ) 6.1.1290 duplicate TOS
+C  mferr(mfin(1);mfout(1));
+C  mfup, mftos=mfsec; ; INLINE
+
+: OVER  \ ( a b -- a b a ) 6.1.1990 copy SECOND over TOS
+C  mferr(mfin(2);mfout(1));
+C  mfup, mftos=mfthd; ; INLINE
+
+: ?DUP \ ( 0 | n  -- 0| n n ) 6.1.0630 duplicate TOS if non-zero
+   i" if(mftos)" dup ; INLINE
+
+: PICK  \ ( ( xn..x0 i -- xn..x0 xi ) 6.2.2030 copy i-th element to TOS
+C  mferr(mfin(mftos+1));
+C  mftos=mfsp[-mftos-1]; ; INLINE
+
+: NIP ( a b -- b ) \ 6.2.1930 discard SECOND
+C  mferr(mfin(2));
+C  mfsec=mftos, mfdrop; ; INLINE
+
+: TUCK  \ ( a b -- b a b ) 6.2.2300 duplicate TOS under SECOND
+C  mferr(mfin(2);mfout(1));
+C  mfup, mftos=mfsec, mfsec=mfthd, mfthd=mftos; ; INLINE
+
+: -ROT  \ ( a b c -- c a b) MF rot anti-clockwise
+C  mferr(mfin(3));
+C  mfCell c=mftos;
+C  mftos=mfsec,mfsec=mfthd,mfthd=c; ; INLINE
+
+: PLUCK  \ ( a b c -- a b c a ) MF copy THIRD over TOS
+C  mferr(mfin(3);mfout(1));
+C  mfontos=mfthd, mfup; ; INLINE
+
+: ROLL  \ ( xn..x0 n -- xn-1..x0 xn ) 6.2.2150 rotate n+1 top stack elements 
+C  mferr(mfin(mftos+2));
+C  mfCell n=mfpop(); mfCell x=mfsp[-n];
+C  memmove(mfsp-n,mfsp-n+1,n*MFSIZE);
+C  mftos=x; ;
+
+: 2DROP  \ ( a b -- ) 6.1.0370 discard TOS-pair
+C  mferr(mfin(2));
+C  mf2drop; ; INLINE
+
+: 2DUP  \ ( a b -- a b a b ) 6.1.0380 duplicate TOS pair
+C  mferr(mfin(2);mfout(2));
+C  mfCell a=mfsec, b=mftos;
+C  mfpush(a), mfpush(b); ; INLINE
+
+: 2OVER  \ ( a b c d -- a b c d a b ) 6.1.0400 copy SECOND pair over TOS pair
+C  mferr(mfin(4);mfout(2));
+C  mfCell a=mffth, b=mfthd;
+C  mfpush(a), mfpush(b); ; INLINE
+ 
+: 2SWAP  \ ( a b c d -- c d a b ) 6.1.0430 exchange TOS-pair with SECOND-pair
+C  mferr(mfin(4));
+C  mfCell a=mffth, b=mfthd, c=mfsec, d=mftos;
+C  mffth=c, mfthd=d, mfsec=a, mftos=b; ; INLINE
+
+: 2>R  \ ( a b -- r: a b ) 6.2.0340 paired >R
+C  mferr(mfin(2);mfrout(2));
+C  mfCell x=mfpop();
+C  mfrpush(mfpop()), mfrpush(x); ; INLINE
+   
+: 2R>  \ ( r: a b -- d: a b ) 6.2.0410 paired R>
+C  mferr(mfrin(2);mfout(2));
+C  mfCell x=mfrpop();
+C  mfpush(mfrpop()), mfpush(x); ; INLINE
+
+: 2R@  \ ( r: a b -- a b d: a b ) 6.2.0415 paired R@
+C  mferr(mfrin(2);mfout(2));
+C  mfpush(mfrsec), mfpush(mfrtos); ; INLINE
+
+\ ------Other Stacks ---------------------------------------------------------
+
+: _LP!  \ ( u -- ) set locals stack pointer
+C  mferr(mfin(1);mfwithin(0,mftos,mfstksize));
+C  mflp=mfstk+MFSTKSIZE-mfpop(); ;
+
+: _FP!  \ ( u -- ) MF set data-stack pointer (called by ABORT)
+C  mferr(mfin(1);mfwithin(0,mftos,mffstsize));
+C  mffp=mffst+mfpop(); ;
+
+\ ------ Logic ---------------------------------------------------------------
+
+: NOOP ;  \ ( -- ) null operation
+
+-1 CONSTANT TRUE  \ ( -- t ) 6.2.2298 true flag
+
+ 0 CONSTANT FALSE \ ( -- f ) 6.2.1485 false flag
+
+: NOT  \ ( n -- f ) MF logical NOT
+C  mferr(mfin(1));
+C  mftos=-!mftos; ; INLINE
+
+: AND  \ ( a b -- a&b ) 6.1.0720 bitwise AND
+C  mferr(mfin(2));
+C  mfdrop, mftos&=mfontos; ; INLINE
+
+: OR  \ ( a b -- a|b ) 6.1.1980 bitwise OR
+C  mferr(mfin(2));
+C  mfdrop, mftos|=mfontos; ; INLINE
+
+: XOR  \ ( a b -- a|b ) 6.1.2490 bitwise XOR
+C  mferr(mfin(2));
+C  mfdrop, mftos^=mfontos; ; INLINE
+
+: INVERT  \ ( x -- ~x ) 6.1.1720 bitwise INVERT
+C  mferr(mfin(1));
+C  mftos=~mftos; ; INLINE
+
+: LSHIFT  \ ( u p -- v ) 6.1.1805 left-shift u bitwise by p position
+C  mferr(mfin(2));
+C  mfCell p=mfpop(); mftos<<=p; ; INLINE
+
+: RSHIFT  \ ( u p -- v ) 6.1.2162 right-shift u bitwise by p position
+C  mferr(mfin(2));
+C  mfCell p=mfpop(); mftos=(mfUCell)mftos>>p; ; INLINE
+
+: ROL  \ ( u p -- v ) MF left-rotate u bitwise by p positions
+C  mferr(mfin(2));
+C  mfCell p=mfpop(); mfUCell u=(mfUCell)mftos;   
+C  p&=MFBITS-1, mftos = u<<p | u>>(MFBITS-p); ;
+
+: ROR  \ ( u p -- v ) MF right-rotate u bitwise by p positions
+C  mferr(mfin(2));
+C  mfCell p=mfpop(); mfUCell u=(mfUCell)mftos;   
+C  p&=MFBITS-1, mftos = u>>p | u<<(MFBITS-p); ;
+
+: ON  \ ( adr -- ) MF set flag on
+C  mferr(mfin(1));
+C  mfat(mfpop())=(mfUCell)-1; ; INLINE
+
+: OFF  \ ( adr -- ) MF set flag off
+C  mferr(mfin(1));
+C  mfat(mfpop())=0; ; INLINE 
+
+\ ------ Comparisons ---------------------------------------------------------
+
+: 0=  \ ( n -- f ) 6.1.0270 true if = 0
+C  mferr(mfin(1));
+C  mftos=-(mftos==0); ; INLINE
+
+: 0<>  \ ( n -- f ) 6.2.0260 true if <> 0
+C  mferr(mfin(1));
+C  mftos=-(mftos!=0); ; INLINE
+
+: 0<  \ ( n -- f ) 6.1.0250 true if < 0
+C  mferr(mfin(1));
+C  mftos=-(mftos<0); ; INLINE
+
+: 0>  \ ( n -- f ) 6.2.0280 true if > 0
+C  mferr(mfin(1));
+C  mftos=-(mftos>0); ; INLINE
+
+: 0<=  \ ( n -- f ) MF true if <= 0
+C  mferr(mfin(1));
+C  mftos=-(mftos<=0); ; INLINE
+
+: 0>=  \ ( n -- f ) MF true if >= 0
+C  mferr(mfin(1));
+C  mftos=-(mftos>=0); ; INLINE
+
+: =  \ ( a b -- f ) 6.1.0530 true if a = b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos==mfontos); ; INLINE
+
+: <>  \ ( a b -- f ) 6.2.0500 true if a <> b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos!=mfontos); ; INLINE
+
+: <  \ ( a b -- f ) 6.1.0480 true if a < b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos<mfontos); ; INLINE
+
+: >  \ ( a b -- f ) 6.1.0540 true if a > b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos>mfontos); ; INLINE
+
+: <=  \ ( a b -- f ) MF true if a <= b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos<=mfontos); ; INLINE
+
+: >=  \ ( a b -- f ) MF true if a >= b
+C  mferr(mfin(2));
+C  mfdrop, mftos=-(mftos>=mfontos); ; INLINE
+
+: U<  \ ( u v -- f ) 6.1.2340 true if unsigned u < v
+C  mferr(mfin(2));
+C  mfdrop, mftos=-((mfUCell)mftos<(mfUCell)mfontos); ; INLINE
+
+: U>  \ ( u v -- f ) 6.2.2350 true if unsigned u > v
+C  mferr(mfin(2));
+C  mfdrop, mftos=-((mfUCell)mftos>(mfUCell)mfontos); ; INLINE
+
+: U<=  \ ( u v -- f ) MF true if unsigned u <= v
+C  mferr(mfin(2));
+C  mfdrop, mftos=-((mfUCell)mftos<=(mfUCell)mfontos); ; INLINE
+
+: U>=  \ ( u v -- f ) MF true if unsigned u > v
+C  mferr(mfin(2));
+C  mfdrop, mftos=-((mfUCell)mftos>=(mfUCell)mfontos); ; INLINE
+
+\ ------ Arithmetic (single) -------------------------------------------------
+
+: +  \ ( n1 n2 -- sum ) 6.1.0120 add TOS to SECOND
+C  mferr(mfin(2));
+C  mfdrop, mftos+=mfontos; ; INLINE
+
+: -  \ ( n1 n2 -- sub ) 6.1.0160 subtract TOS from SECOND
+C  mferr(mfin(2));
+C  mfdrop, mftos-=mfontos; ; INLINE
+
+: NEGATE  \ ( n - -n ) 6.1.1910 negate TOS
+C  mferr(mfin(1));
+C  mftos=-mftos; ; INLINE
+
+: 1+  \ ( n -- n+1 ) 6.1.0290 increment n
+C  mferr(mfin(1));
+C  mftos+=1; ; INLINE
+  
+: 1-  \ ( n -- n+1 ) 6.1.0300 decrement n
+C  mferr(mfin(1));
+C  mftos-=1; ; INLINE
+
+: ABS  \ ( n -- abs ) 6.1.0690 absolute value of TOS  
+C  mferr(mfin(1));
+C  mftos=llabs(mftos); ; INLINE
+
+: *  \ ( n1 n2 -- prod ) 6.1.0090 multiply TOS to SECOND
+C  mferr(mfin(2));
+C  mfdrop, mftos*=mfontos; ; INLINE
+
+: /MOD  \ ( a b - r q ) 6.1.0240 signed division with remainder
+C  mferr(mfin(2);mfzero(mftos));
+C  mfCell a=mfsec, b=mftos, q=a/b, r=a-q*b;
+C  mfsec=r, mftos=q; ;
+
+: /  \ ( n1 n2 -- quot ) 6.1.0230 divide SECOND by TOS
+C  mferr(mfin(2);mfzero(mftos));
+C  mfdrop, mftos/=mfontos; ; INLINE
+
+: MOD  \ ( a b -- mod ) 6.1.1890 remainder after division SECOND by TOS
+C  mferr(mfin(2);mfzero(mftos));
+C  mfdrop, mftos%=mfontos; ; INLINE
+
+: 2*  \ ( n -- 2n ) 6.1.0320 multiply TOS with 2
+C  mferr(mfin(1));
+C  mftos<<=1; ; INLINE
+
+: 2/  \ ( n -- n/2) 6.1.0330 divide TOS by 2
+C  mferr(mfin(1));
+C  mftos>>=1; ; INLINE
+
+: WITHIN  \ ( n min max -- flag ) 6.2.2440 true if min <= n < max
+   over - >r - r> u< ;
+
+: MAX  \ ( a b -- max ) 6.1.1870 maximum of TOS and SECOND
+   2dup < IF swap THEN drop ; 
+
+: MIN  \ ( a b -- min ) 6.1.1880 minimum of TOS and SECOND   
+   2dup < ~IF swap THEN drop ; 
+
+\ ------ Arithmetic (mixed) --------------------------------------------------
+
+: _MU+  \ ( ud w -- uds ) add single to souble number
+C  mferr(mfin(3));
+C #ifdef MFDBL
+C  mfUCell w=mfpop(); mfUDbl ud=mfdtos;
+C  mfdtos=ud+w;
+C #else
+C  mfUCell w=mfpop(), lo=mfsec+w;
+C  mfsec=lo, mftos+=lo<w;
+C #endif
+   ;
+   
+: _MU*  \ ( ud w - udp ) unsigned multiplication to double result
+C  mferr(mfin(3));
+C #ifdef MFDBL
+C  mfUCell w=mfpop(); mfUDbl ud=mfdtos;
+C  mfdtos=ud*w;
+C #else
+C  mfUCell c=mfpop(), b=mftos, a=mfsec;
+C  mfUCell cl=c&0xffffffff, ch=c>>32, al=a&0xffffffff, ah=a>>32;
+C  mfsec = a*c, mftos = b*c + ah*ch;
+C  a = ch*al, b = a + cl*ah + ((cl*al)>>32), c = b>>32;
+C  mftos += (a<=b ? c : c|0x100000000);
+C #endif
+   ;
+
+: _MU/MOD  \ ( ud v - r udq ) mixed unsigned division (gforth: UD/MOD)
+C  mferr(mfin(3);mfzero(mftos));
+C #ifdef MFDBL
+C  mfUDbl udq, ud=*(mfUDbl*)(mfsp-2); mfUCell v=mftos;
+C  if(ud==v) mfthd=0, mfsec=1, mftos=0;
+C  else mfdtos=udq=ud/v, mfthd=ud-udq*v;
+C #else
+C  mfUCell v=mftos, a, b=mfthd, c=mfsec, d;
+C  if (!c&&(b==v)) a=1, b=c=0; else {
+C    if (!c) a=b/v, c=b-a*v, b=0; else {
+C      a=c/v, c-=a*v;  
+C      for (int i=0; i<64; i++) {
+C        d=c>>63, c=(c<<1)|(b>>63), b=(b<<1)|(a>>63), a<<=1;
+C        if ((c>=v)||d) c-=v, a+=1; } } }
+C  mfsec=a, mftos=b, mfthd=c;
+C #endif
+   ;
+
+: UM*  \ ( u w -- dp ) 6.1.2360 multiply TOS with SECOND to double product 
+   0 swap _mu* ;
+
+: UM/MOD  \ ( ud u - r q ) 6.1.2370 mixed unsigned ratio division
+   _mu/mod drop ;
+
+: S>D  \ ( n -- d ) 6.1.2170 expand single to double cell number
+   dup 0< ;
+
+: DNEGATE  \ ( d -- -d ) 8.6.1.1230 negate double number
+C  mferr(mfin(2));
+C #ifdef MFDBL
+C  mfdtos=-mfdtos;
+C #else
+C  mfUCell l=~mfsec+1, h=~mftos+!l;
+C  mfsec=l, mftos=h;
+C #endif
+   ;  
+
+: DABS  \ ( d -- ud ) 8.6.1.1160 absolute double numer value
+   dup 0< IF dnegate THEN ;
+
+: M*  \ ( m n -- dprod ) 6.1.1810 multiply TOS with SECOND to double product
+   2dup xor >r abs swap abs um* r> 0< IF dnegate THEN ;
+
+: SM/REM  \ ( d n -- r q ) 6.1.2214 mixed symmetric division
+C  mferr(mfin(3);mfzero(mftos));
+C  mfCell z=mfsec, n=mftos, s=(z^n)<0;  
+   abs >r dabs r> um/mod
+C  if (s) mftos=-mftos; 
+C  if (z<0) mfsec=-mfsec; ;
+
+: FM/MOD  \ ( d n -- mod q ) 6.1.1561 mixed floored division
+C  mfCell n=mftos, s=(mfsec^n)<0;
+   sm/rem
+C  if (s&&mfsec) mftos-=1, mfsec+=n; ; 
+
+: */MOD  \ ( a b c -- r q ) 6.1.0110 signed ratio with double interim product
+   >r m* r> sm/rem ;
+
+: */  \ ( a b c -- q ) 6.1.0100 signed ratio with double interim product
+   */mod nip ;
+
+\ ------ Memory --------------------------------------------------------------
+
+: CHAR+  \ ( adr -- nadr )  6.1.0895 increment by one char
+C  mferr(mfin(1));
+C  mftos+=1; ; INLINE
+
+: CHARS ;  \ ( n -- nchars ) 6.1.0898 size of n chars
+
+: C@  \ ( cadr -- c ) 6.1.0870 read char from memory
+C  mferr(mfin(1));
+C  mftos=mfcat(mftos); ; INLINE
+
+: C!  \ ( c cadr -- ) 6.1.0850 store char to memory
+C  mferr(mfin(2));
+C  mfcat(mftos)=(mfChar)mfsec, mf2drop; ; INLINE
+
+: MOVE  \ ( afrom ato u -- ) 6.1.1900 move char area in memory, overlapping
+C  mferr(mfin(3));
+C  if (mftos>0) memmove((char*)mfsec,(char*)mfthd,mftos);
+C  mfsp-=3; ;
+
+: FILL  \ ( a u c -- ) 6.1.1540 fill memory area with char
+C  mferr(mfin(3));
+C  if (mfsec>0) memset((char*)mfthd,(char)mftos,mfsec);
+C  mfsp-=3; ;
+
+: ERASE  \ ( adr u - ) 6.2.1350 erase memory area
+   0 fill ;
+
+: CELL+  \ ( adr -- nadr ) 6.1.0880 dvance by one cell
+C  mferr(mfin(1));
+C  mftos+=MFSIZE; ; INLINE
+
+: CELL-  \ ( adr -- nadr ) MF retreat by one cell
+C  mferr(mfin(1));
+C  mftos-=MFSIZE; ; INLINE
+
+: CELL  \ ( -- u ) MF size of 1 cell 
+C  mferr(mfout(1));
+C  mfpush(MFSIZE); ; INLINE
+
+: CELLS  \ ( n -- ncells ) 6.1.0890 size of n cells 
+C  mferr(mfin(1));
+C  mftos*=MFSIZE; ; INLINE
+
+: @  \ ( adr -- n ) 6.1.0650 read cell from memory
+C  mferr(mfin(1));
+C  mftos=mfat(mftos); ; INLINE
+
+: !  \ ( x adr -- ) 6.1.0010 store x at adr
+C  mferr(mfin(2));
+C  mfat(mftos)=mfsec, mf2drop; ; INLINE 
+
+: +!  \ ( x adr -- ) 6.1.0130 add x to number at adr
+C  mferr(mfin(2));
+C  mfat(mftos)+=mfsec, mf2drop; ; INLINE
+
+: INCR  \ ( adr -- ) MF increment cell at adr
+C  mferr(mfin(1));
+C  mfat(mftos)+=1, mfdrop; ; INLINE
+
+: DECR  \ ( adr -- ) MF decrement cell at adr
+C  mferr(mfin(1));
+C  mfat(mftos)-=1, mfdrop; ; INLINE
+
+: 2@  \ ( adr -- n m ) 6.1.0350 read cell-pair from memory, high endian
+C  mferr(mfin(1);mfout(1));
+C  mfCell a=mftos;
+C  mftos=mfat(a+MFSIZE), mfpush(mfat(a)); ; INLINE
+
+: 2!  \ ( b a adr -- ) 6.1.0310 store cell-pair to memory, a first
+C  mferr(mfin(3));
+C  mfCell a=mfpop();
+C  mfat(a)=mfpop(), mfat(a+MFSIZE)=mfpop(); ; INLINE
+
+\ ------ Strings -------------------------------------------------------------
+
+: COUNT  \ ( cadr -- adr u ) 6.1.0980 counted string parameters
+  dup 1+ swap c@ ;
+
+: /STRING  \ ( a1 u1 n -- a2 u2 ) 17.6.1.0245 shorten/add to string by n chars
+   dup >r - swap r> + swap ;   
+
+: CHAR/  \ ( adr ct -- adr+1 ct-1 ) MF cut first string char
+   dup 0> IF 1- swap 1+ swap THEN ;
+
+: _TOUPPER  \ ( c - cup ) MF convert to uppercase character
+C   mferr(mfin(1));
+C   mftos=toupper(mftos); ;
+
+: _UPPER  \ ( a u -- ) MF convert string to upper case characters
+   1 FOR> n c@ _toupper n c! NEXT ; 
+
+-1 VARIABLE CAPS  \ flag for case-sensitive dictionary search
+
+: STR=  \ ( a1 u1 a2 u2 -- f ) MF true if strings are equal (CAPS-dependant)
+C  char *a1,*a2; int u1,u2;
+C  u2=mfpop(), a2=(char*)mfpop(), u1=mfpop(), a1=(char*)mftos; mftos=0;
+   caps @ i" mfsetcmp(mfpop());"
+C  if ((u1==u2)&&!mfcmp(a1,a2,u1)) mftos=-1; ;
+
+: _PLACE  \ ( a u ct-adr -- ) place counted null-terminated string at ct-adr
+   swap 254 min 2dup swap c! swap 1+ 2dup + 0 swap c! swap move ;
+
+\ ------ Data Space ----------------------------------------------------------
+
+: _ORIGIN  \ ( -- adr ) start of available data space within C heap
+C  mferr(mfout(1));
+C  mfpush(mfdsp); ;
+
+: _LIMIT	 \ ( -- adr ) end of data space
+C  mferr(mfout(1));
+C  mfpush(mfdsp+MFDSPSIZE); ;  
+
+: _#IB  \ ( -- u ) input buffer size
+C  mferr(mfout(1));
+C  mfpush(MFIB); ;
+
+: _HP  \ ( -- adr ) MF heap pointer below LIMIT
+C  mferr(mfout(1));
+C  static mfChar *hp=mfdsp+MFDSPSIZE;
+C  mfpush(&hp); ;
+
+: _DP  \ ( -- a ) data space pointer
+C  mferr(mfout(1));
+C  mfpush(&mfdp); ; INLINE
+
+: ALIGNED  \ ( adr -- aladr ) 6.1.0706 align address to next cell boundary
+C  mferr(mfin(1));
+C  mftos=(mftos+MFSIZE-1)&(-MFSIZE); ;
+
+: HERE  \ ( -- adr ) 6.1.1650 free dataspace begins here
+   _dp @ ; INLINE
+
+: PAD  \ ( -- adr ) 6.2.2000 volatile user pad of 256 bytes 
+   here _#ib + 23 cells + aligned ; \ ib+header(5 cells)+pictnum(17 cells)
+   
+: UNUSED  \ ( -- u ) 6.2.2395 amount of space available after HERE
+   _hp @ here 24 cells + 256 + - ;
+
+: ALIGN  \ ( -- ) 6.1.0705 align dictionary pointer 
+   here aligned _dp ! ;
+
+: ALLOT  \ ( n -- ) 6.1.0710 advance dictionary pointer by n chars 
+   unused over < IF -8 THROW THEN _dp +! ;
+
+\ ------ String to Number ----------------------------------------------------
+ 
+10 VARIABLE BASE  \ 6.1.0750 number conversion radix
+
+: DECIMAL  \ ( -- ) 6.1.1170 set numeric conversion base to decimal
+   10 base ! ; INLINE
+
+: HEX  \ ( -- ) 6.2.1660 set numeric conversion base to hexadecimal
+   16 base ! ; INLINE
+
+: _DIGIT>N  \ ( c - u f ) try to convert digit to number below BASE
+   base @ 
+C  mfsec=mfdig2n(mfsec,mftos); mftos=(mfsec==256 ? 0 : -1); ;
+
+: >NUMBER \ ( ud1 a1 u1 -- ud2 a2 u2 ) 6.1.0570 convert string until non-digit
+   BEGIN ^WHILE
+     over c@ _digit>n ~IF drop EXIT THEN
+     >r 2swap tuck base @ _mu* r> _mu+ 
+	 rot over u> IF 2drop -1 -1 2swap EXIT THEN  \ overflow
+	 2swap char/
+   REPEAT ;  
+
+2 CELLS BUFFER: __DBL  \ double number
+VARIABLE __DPL         \ decimal point location
+VARIABLE __BASE        \ temporary number base
+VARIABLE __SIGN        \ temporary number sign
+
+: __NUMADJ  \ ( ud a u -- d ) factor
+   2drop __sign @ IF dnegate THEN 2dup __dbl 2! __base @ base ! ;
+
+: NUMBER?  \ ( a u -- 0 | n 1 | d 2 ) MF convert to single or double number
+   dup 0> ~IF 2drop 0 EXIT THEN -1 __dpl !
+   base @ __base ! over c@
+   CASE '$' OF char/ hex ENDOF
+        '#' OF char/ decimal ENDOF
+        '%' OF char/ 2 base ! ENDOF
+		'.' OF dup 1 = IF 2drop 0 EXIT THEN ENDOF
+		''' OF dup 3 = IF over 2 + c@ ''' = IF drop 1+ c@ 1 EXIT
+               THEN THEN ENDOF
+   ENDCASE 0 __sign ! over c@
+   CASE '+' OF char/ ENDOF
+        '-' OF char/ -1 __sign ! ENDOF
+   ENDCASE 0 0 2swap dup ~IF decimal -24 throw THEN >number
+   ^IF over c@ '.' =
+     IF char/ dup __dpl ! >number dup ~IF __numadj 2 EXIT THEN THEN
+	 2drop 2drop  -1 __dpl ! __base @ base ! 0 EXIT
+   THEN pluck >r __numadj r> IF 2 ELSE drop 1 THEN ;
+
+: _NUMBER?  \ ( a u -- 0 | n 1 ) MF convert to single number
+   number? dup 2 = IF drop 2drop 0 THEN ;
+
+\ ------ Terminal Output -----------------------------------------------------
+
+: EMIT  \ ( c -- ) 6.1.1320 send TOS to stdout
+C  mferr(mfin(1));
+C  mfemit(mfpop()); ; INLINE
+
+32 CONSTANT BL  \ 6.1.0770 blank character
+
+: SPACE  \ ( -- ) 6.1.2220 type single space
+   bl emit ;
+
+: SPACES  \ ( n -- ) 6.1.2230 type n spaces 
+   FOR space NEXT ;
+
+: CR  \ ( -- ) 6.1.0990 emit new-line character
+C  mfemit('\n'); ; INLINE
+
+: TYPE  \ ( a u -- ) 6.1.2310 send string to stdout
+C  mferr(mfin(2));
+C  mftype(mfsec,mftos), mf2drop; ;
+
+\ ------ Number to String ----------------------------------------------------
+ 
+: _N>DIGIT  \ ( u - c f ) try to convert number below BASE to digit
+   base @ 
+C  mfsec=mfn2dig(mfsec,mftos); mftos=(mfsec==256 ? 0 : -1); ;
+
+VARIABLE __HLD  \ converted digit location
+VARIABLE __NUM  \ converted digits
+
+VARIABLE _,SEP  \ flag for ,-separated numeric output 
+
+: HOLD  \ ( c -- ) 6.1.1670 prepend converted digit   
+   __hld @ 1- dup __hld ! c! ;
+
+: HOLDS  \ ( adr u ) 6.2.1675 appends string to numeric output
+   BEGIN ^WHILE 1- 2dup + c@ hold REPEAT 2drop ;
+
+: <#  \ ( -- ) 6.1.0490 initialize pictured numeric output conversion
+   pad 1- 0 over c! __hld ! __num off ;
+
+: #  \ ( ud1 -- ud2 ) 6.1.0030 calculate and hold next digit
+   _,sep @ base @ 10 = and
+   IF __num @ ?dup IF 3 mod ~IF ',' hold THEN THEN __num incr THEN
+   base @ _mu/mod rot _n>digit drop hold ;
+
+: #>  \ ( ud -- a u ) 6.1.0040 get converted string from buffer
+   2drop __hld @ pad 1- over - ;
+
+: #S  \ ( ud1 -- ud2 ) 6.1.0050 convert until ud1 is zero
+   BEGIN # 2dup or ~UNTIL ;
+
+: SIGN   \ ( sf -- ) 6.1.2210 prepend sign character
+   0< IF '-' hold THEN ;
+
+\ ------ Number Output -------------------------------------------------------
+
+: _(.)    \ ( n -- a u ) convert signed single number
+   dup abs 0 <# #s rot sign #> ;
+
+: .  \ ( n -- ) 6.1.0180 display signed single number
+   _(.) type space ;
+
+: .R  \ ( n w -- ) 6.2.0210 display signed n right-aligned in a w-wide field
+   >r _(.) r> over - spaces type ;
+
+: _(U.)   \ ( u -- a u ) convert unsigned single number
+   0 <# #s #> ;
+
+: U.  \ ( u -- ) 6.1.2320 display unsigned single number
+   _(u.) type space ;
+
+: U.R  \ ( u w -- ) 6.2.2330 display u right-aligned in a w-wide field
+   >r _(u.) r> over - spaces type ;
+   
+: DEC.  \ ( u -- ) MF display unsigned hexadecimal number
+   base @ >r decimal . r> base ! ;
+
+: HEX.  \ ( u -- ) MF display unsigned hexadecimal number
+   base @ >r hex '$'  emit u. r> base ! ;
+
+: ,. \ ( n -- ) MF display ,-separated decimal number
+  _,sep on . _,sep off ;
+  
+: ,.R \ ( n w -- ) MF display ,-separated decimal number in w-field
+  _,sep on .r _,sep off ;
+  
+: U,. \ ( n -- ) MF display ,-separated unsigned decimal number
+  _,sep on u. _,sep off ;
+  
+: U,.R \ ( n w -- ) MF display ,-separated unsigned decimal number in w-field
+  _,sep on u.r _,sep off ;
+  
+\ ------ Terminal Input ------------------------------------------------------
+
+DEFER: KEY  \ ( -- c ) 6.1.1750 receive raw keyboard event
+C  mferr(mfout(1));
+C  mfpush(mfkey()); ;   
+
+DEFER: ACCEPT \ ( a umax -- uread ) 6.1.0695 accept keyboard input to buffer
+   0 BEGIN key dup 13 <> WHILE
+     dup 3 = over 27 = or  \ ctrl-c or esc
+	   IF drop 0 BREAK THEN
+	 dup 8 =  \ bs
+	   IF drop ^IF 8 emit space 8 emit 1- THEN CONTINUE THEN
+     >r 2dup > r> swap
+	   IF dup emit over 4 pick + c! 1+  \ char
+       ELSE drop THEN
+   REPEAT drop
+   dup >r > IF r@ + 0 swap c! ELSE drop THEN r> ;
+
+\ ------ Input Buffers -------------------------------------------------------
+   
+: _TIB  \ ( -- a ) terminal input buffer
+C  mferr(mfout(1));
+C  static mfChar tib[MFIB+1]; mfpush(tib); ;
+
+: _SIBS  \ ( -- a ) 4 circulating string buffers
+C  mferr(mfout(1));
+C  static mfChar sibs[4*(MFIB+2)]; mfpush(sibs); ;
+
+VARIABLE __SIBID  \ current string buffer id 0..3
+
+: _SIB  \ ( -- a ) actual string buffer address
+   _sibs __sibid @ _#ib 2 + * + ;
+ 
+: _>SIB  \ ( a u -- ) place string into next string buffer (rotating)
+   _#ib 2 - min __sibid @ 1+ 3 and __sibid ! _sib _place ; 
+
+\ ------ Input Sources -------------------------------------------------------
+
+\ source struct {u,src,in,blk,srcid}
+5 CELLS BUFFER: _SRCSPEC  \ MF input source specification buffer 
+
+: _SRCLEN  \ ( -- u ) MF current source length
+   _srcspec ;
+
+: _SRCADR  \ ( -- u ) MF current source address
+   _srcspec cell+ ;
+   
+: _SRCID!  \ ( id -- ) MF set new source ID
+   _srcspec 4 cells + ! ;
+
+: _SRC2!  \ ( a u -- ) MF set new input source area
+   _srcspec 2! ;
+
+: _SRC>R  \ ( -- r: u s in id ) MF save source spec to rstack
+   _srcspec 5 cell FOR> n @ >r NEXT ;
+
+: _R>SRC  \ ( r: u s in id -- ) MF restore source spec from rstack
+   _srcspec 5 cell <FOR r> n ! NEXT ;
+
+: SOURCE  \ ( -- a u ) 6.1.2216 input source area
+   _srcspec 2@ ;
+
+: >IN  \ ( -- u ) 6.1.0560 current input offset in source
+   _srcspec 2 cells + ;
+  
+: SOURCE-ID  \ ( -- id ) 6.2.2218 input source ID
+   _srcspec 4 cells + @ ;
+
+: BLK  \ ( -- u ) 7.6.1.0790 block number (for block sources)
+   _srcspec 3 cells + ;
+
+DEFER: SAVE-INPUT  \ ( -- xn..x1 n ) 6.2.2182 get source specification
+   _srcspec 5 cell FOR> n @ NEXT 5 ;
+
+DEFER: RESTORE-INPUT  \ ( xn..x1 n -- f ) 6.2.2148 restore source spec
+   5 <> over source-id <> or IF true EXIT THEN
+   _srcspec 5 cell <FOR n ! NEXT false ;
+
+DEFER: REFILL  \ ( -- f ) 6.2.2125 refill input source
+   source-id ~IF  \ terminal
+     _tib dup _#ib accept _src2! 0 >in ! true
+   ELSE false  \ string or file
+   THEN ;
+
+\ ------ Parsing -------------------------------------------------------------
+
+: _SKIP  \ ( ap up c -- a' u' ) MF skip matching chars or whitespaces
+C  mferr(mfin(3));
+C  mfChar c=(mfChar)mfpop(),*a=(mfChar*)mfsec; mfCell u=mftos;
+C  if (u<0) u=0;
+C  if (c==32) { while (u>0) { if (*a>32) break; else a++,u--; } } 
+C  else { while (u>0) { if (*a!=c) break; else a++,u--; } }
+C  mfsec=(mfCell)a, mftos=u; ;
+
+: _SCAN  \ ( ap up c -- a' u' ) MF scan for matching char or whitespace
+C  mferr(mfin(3));
+C  mfChar c=(mfChar)mfpop(), *a=(mfChar*)mfsec; mfCell u=mftos; 
+C  if (u<0) u=0;
+C  if (c==32) { while (u>0) { if (*a<=32) break; else a++,u--; } } 
+C  else { while (u>0) { if (*a==c) break; else a++,u--; } }
+C  mfsec=(mfCell)a, mftos=u; ;
+
+: __PRSAREA  \ ( -- ap up ) get parse area in source
+   source >in @ /string 0 max ;
+
+: __PRSOVF  \ ( -- ) check for parse area overflow
+   _srclen @ >in @ < IF -18 THROW THEN ;
+
+: _PARSE  \ ( c a u -- a' u' ) parse string until c is found
+   over >r rot _scan 1- _srclen @ swap - >in ! r> tuck - ;
+   
+: PARSE  \ ( c -- a' u' ) 6.2.2008 parse source until c is found
+   __prsarea _parse ;
+
+: _PARSE-CHAR  \ ( c -- a u ) parse with overflow check
+   parse __prsovf ;
+
+: _PARSE-NAME  \ ( c <name> -- a u ) parse next name
+   __prsarea 2 pick _skip _parse ;
+
+: PARSE-NAME  \ ( <name> -- a u ) 6.2.2020 parse next space-delimited name
+   bl _parse-name ;
+
+2 CELLS BUFFER: _PARSED  \ last parsed name address
+
+: _SWORD  \ ( a u -- aw ) MF prepare word from string at HERE
+   here _place here ; 
+
+: WORD  \ ( c <name> -- ct-adr ) 6.1.2450 parse next word name
+   _parse-name 2dup _parsed 2! _sword ;
+
+: _PARSE-WORD  \ ( <name> -- a u ) parse next space-delimited word name
+   bl word count ;
+
+: CHAR  \ ( 'name' -- c ) 6.1.0895 get first character of next parsed word
+   parse-name drop c@ ;
+
+DEFER: \  \ ( -- ) 6.2.2535 ignore rest of current source line  
+   _srclen @ >in ! ; IMMEDIATE
+
+DEFER: (  \ ( -- ) 6.1.0080 skip source until closing bracket
+   ')' _parse-char 2drop ; IMMEDIATE  
+
+: .(  \ ( -- ) 6.2.0200 display bracketed source comment
+   ')' _parse-char type ; IMMEDIATE
+
+\ ------ Dictionary Search ---------------------------------------------------
+
+: _WORDLISTS  \ ( -- a ) MF start of wordlist chain
+C  mferr(mfout(1));
+C  mfpush(MFFWL); ;
+
+: _CONTEXT  \ ( -- a ) MF dictionary search context (8 wordlist pointers)
+C  mferr(mfout(1));
+C  mfpush(MFCTX); ;
+
+: _SEARCHNT  \ ( a u wid -- 0 | xt f ) MF find word in wordlist
+C  mferr(mfin(3));
+C  mfCell wid=mfpop(), u=mfpop(), a=mfpop(), f;
+   caps @ i" mfsetcmp(mfpop());"
+C  f=mfsearchnt(a,u,mfat(wid)); if (f) mfpush(mfxt);
+C  mfpush(f); ;
+
+: _SEEKNT  \ ( a u -- 0 | xt f ) MF find word in dictionary
+C  mferr(mfin(2));
+C  mfCell u=mfpop(), a=mfpop(), f;
+   caps @ i" mfsetcmp(mfpop());"
+C  f=mfseeknt(a,u); if (f) mfpush(mfxt);
+C  mfpush(f); ;
+
+: _SEEKXT  \ ( adr -- xt ofs | -1 ) find nearest word to given address
+C  mferr(mfin(1);mfout(1));
+C  mfCell f=mfseekxt(mftos); mfdrop;
+C  if (f!=-1) mfpush(mfxt);
+C  mfpush(f); ;
+
+VARIABLE _TEMPWL  \ MF temporary wordlist
+
+VARIABLE __HID  \ MF dirctionary search hide/unhide flag
+
+: UNHIDE>  \ ( -- ) MF hide hidden words in directory
+   2 __hid ! ; IMMEDIATE
+
+: HIDE>  \ ( -- ) MF hide hidden words in directory
+   __hid off ; IMMEDIATE
+
+: HIDDEN  \ ( -- ) MF unhide next word only
+   1 __hid ! ; IMMEDIATE
+
+DEFER: _FIND-WORD  \ ( a u -- 0 | xt f ) MF find word in dictionary
+   __hid @ IF _seeknt __hid @ 1 = IF [,] hide> THEN EXIT THEN
+   _context 8 cell FOR>
+     n @ ~IF BREAK THEN
+	 2dup n @ _searchnt ?dup IF 2swap 2drop EXIT THEN
+   NEXT 2drop 0 ;
+
+: FIND \ ( ca -- ca 0 | xt f ) 6.1.1550 find word in dictionary a
+   dup count _find-word ^IF rot drop THEN ;  
+
+: '  \ ( 'word' -- xt ) 6.1.0070 find words execution token in dictionary
+   _parse-word _find-word ~IF -13 throw THEN ;
+
+\ ------ Text Interpreter ----------------------------------------------------
+
+: EXECUTE  \ ( xt -- .. ) 6.1.1370 execute execution token xt
+C  mferr(mfin(1));
+C  mfw=(mfXT*)mfpop(); (*mfw)(); ; 
+
+VARIABLE STATE   \ interpret/compile status variable
+
+: ,  \ ( n -- ) 6.1.0150 compile cell n into dataspace
+C  mferr(mfin(1));
+C  mfat(mfdp)=mfpop(), mfdp+=MFSIZE; ;
+
+: _[LIT]  \ ( -- n ) cell literal runtime
+C  mferr(mfout(1));
+C  mfpush(*mfip++); ;
+
+: LITERAL  \ (r n -- ) 6.1.1780 compile cell literal
+   [,] _[lit] , ; IMMEDIATE COMPILE-ONLY
+
+\ Recognizer record: {link,rec,rtxt,ctxt} 
+VARIABLE _RECLIST  \ start of recognizer list
+
+: _LITERAL?  \ ( -- x rxt cxt t | f ) MF extendable literal recognizer
+   _reclist BEGIN @ dup 1- here u< WHILE 
+     >r _parsed 2@ r@ 3 cells + @ execute
+     IF r@ 2 cells + @ r> cell+ @ true EXIT THEN r>
+   REPEAT drop false ;
+
+: ?? -13 throw ;  \ MF literal not recognized
+
+: _INTERPRET  \ ( -- ) MF text interpreter loop
+   BEGIN _parse-word dup
+   WHILE _find-word ?dup
+     IF state @
+	   IF 0< IF , ELSE execute THEN
+	   ELSE 1 and IF execute ELSE -14 throw THEN
+	   THEN
+     ELSE _parsed 2@ _number? 
+       IF state @ IF [,] literal THEN CONTINUE THEN
+       _literal?
+       IF state @ IF swap THEN drop execute ELSE ['] ?? execute THEN
+     THEN
+   REPEAT 2drop ;
+
+\ ------ Error Handling ------------------------------------------------------
+
+DEFER: _EXCSRC  \ ( xc -- xc ) display exception source
+   ^IF cr ." ? " source 1 FOR> n c@ bl max emit NEXT
+   cr >in @ spaces ." ^ ?? " THEN ;
+   
+DEFER: _EXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -3 OF ." stack overflow" ENDOF
+     -4 OF ." stack underflow" ENDOF
+     -5 OF ." return stack overflow" ENDOF
+     -6 OF ." return stack underflow" ENDOF
+	 -8 OF ." dictionary overflow" ENDOF
+     -9 OF ." invalid memory address" ENDOF
+    -10 OF ." division by zero" ENDOF
+    -13 OF ." undefined word" ENDOF
+    -14 OF ." interpreting a compile-only word" ENDOF
+	-18 OF ." parsed string overflow" ENDOF
+	-21 OF ." unsupported operation" ENDOF
+	-22 OF ." control-structure mismatch" ENDOF
+	-24 OF ." invalid numeric argument" ENDOF
+	-28 OF ." user interrupt" ENDOF
+	-32 OF ." invalid name argument" ENDOF
+	-38 OF ." non-existent (locked) file" ENDOF \ for FLOAD
+     dup ." exception " .
+   ENDCASE ;
+
+DEFER: _EXCCODE \ ( xc -- ) display throw code or exception message
+  _excmsg ;
+
+: CATCH  \ ( xt -- xc ) 9.6.1.0875 execute xt and return exception code
+C  int xc; mfXcf xcf; // local exception frame
+C  xcf.sp=mfsp-1, xcf.lp=mflp, xcf.fp=mffp, xcf.rp=mfrp, xcf.ip=mfip;
+C  xcf.old=mfxcf, mfxcf=&xcf;   
+C  if (xc=setjmp(xcf.buf),xc) { // unwind
+C     mfsp=xcf.sp, mflp=xcf.lp, mffp=xcf.fp, mfrp=xcf.rp, mfip=xcf.ip; }
+C  else { // execute
+C     mfw=(mfXT*)mfpop(); (*mfw)(); } 
+C  mfxcf=xcf.old, mfpush(xc); ;
+
+: _THROW  \ ( xc -- ) 9.6.1.2275 throw an exception when xc!=0
+   ^IF
+C    if (mfxcf) longjmp(mfxcf->buf,mftos); // unwind stacks
+     dup -1 = IF drop ELSE
+     dup -2 = IF drop type ELSE 
+     _excsrc _exccode THEN THEN
+C    longjmp(mfabort,-1); // reset stacks
+   THEN drop ;
+IS THROW
+
+: FAST>  \ ( -- ) MF disable runtime error checking
+C  mfrtc=0; ;
+
+: SAFE>  \ ( -- ) MF enable runtime error checking
+C  mfrtc=1; ;
+
+\ ------ String Interpreter --------------------------------------------------
+
+: EVALUATE  \ ( adr u -- ..  ) 6.1.1360 interpret a string at adr u
+   _src>r _src2! 0 >in ! -1 _srcid! 0 blk !
+   ['] _interpret CATCH ^IF _excsrc ." in string" THEN   
+   _r>src THROW ;
+
+\ ------ Interactive Interpreter ---------------------------------------------
+
+DEFER: _PROMPT  \ ( -- ) display prompt indicator
+   _rdepth IF ." r: " _rdepth FOR _rdepth 1- n - rpick ,. NEXT  ." | " THEN    
+   depth FOR depth 1- n - pick ,. NEXT
+   base @ dup 10 = IF drop '#' ELSE 16 = IF '$' ELSE '~' THEN THEN
+   emit state @ IF ':' emit THEN space ;
+
+: QUIT  \ ( -- ) 6.1.2050 Forth text interpreter
+   0 _rp! 0 _srcid! 0 state !
+   BEGIN cr _prompt refill space
+   WHILE ['] _interpret CATCH ?dup
+     IF THROW ELSE state @ ~IF ."  ok" THEN THEN
+   REPEAT ;
+
+\ ====== Compiler Basics =====================================================
+
+\ Navigation through header structure
+: _>LINK  ;             ( head -- link )
+: _>PFA   cell+ ;       ( head -- pfa )
+: _>NAME  2 cells + @ ; ( head -- name )
+: _>CFA   3 cells + ;   ( head -- cfa )
+: _<CFA   3 cells - ;   ( cfa -- head )
+
+: _CURRENT  \ pointer to current compilation wordlist
+C  mferr(mfout(1));
+C  static void* cur=MFFWL; mfpush(&cur); ;
+
+: _LAST  \ pointer to last dictionary entry
+C  mferr(mfout(1));
+C  mfpush(&MFLAST); ;
+
+: _LATEST  \ pointer to latest (new) dictionary entry
+C  mferr(mfout(1));
+C  mfpush(&MFLATEST); ;
+
+VARIABLE WARNING  \ warning if word name already exists
+VARIABLE _NAMED   \ MF flags named definitions
+
+: NAMED  \ ( a u -- ) MF create next header with given name (case sensitive)
+   2>r _named on ;
+
+\ hilevel structure: {name$,back,lfa,pfa,nfa,cfa}
+: _HEADER  \ ( xt a u -- ) create new header and append to dictionary
+   _named @ IF _named off 2r> _sword count
+     ELSE _parse-word dup ~IF -32 throw THEN THEN
+   _find-word IF drop warning @
+     IF ."  !! redefined " here count type space THEN THEN
+   here dup c@ 2 + allot align _latest @ , ( back ) here _latest !  \ xt nf
+   _current @ @ , ( lfa ) 0 , ( pfa ) , ( nfa ) @ , ( xt ) ;
+
+: _REVEAL \ ( -- ) append last dictionary element to currrent wordlist
+   _latest @ _>name @ IF _latest @ dup _current @ ! _last ! THEN ;
+
+: _HIDE  \ ( -- ) unlink last dictionary elementfrom current wordlist
+   _last @ _>name @ IF _last @ @ dup _current @ ! _last ! THEN ;
+
+: __FLG!  \ ( n -- ) set compiler flag in pfa
+   _latest @ _>pfa tuck @ or swap ! ;
+   
+: IMMEDIATE  \ ( -- ) 6.1.1710 mark latest definition as immediate
+   1 __flg! ; 
+
+: COMPILE-ONLY  \ ( -- ) mark latest definition as compile-only
+   2 __flg! ;
+
+\ ------ High-level Words ----------------------------------------------------
+
+: [	 \ ( -- ) 6.1.2500 set interpretation state
+   0 state ! ; IMMEDIATE
+
+: ]	 \ ( -- ) 6.1.2520 set compilation state
+   -1 state ! ;
+
+: _[:] \ ( -- .. ) nest into hilevel definition
+C  mferr(mfrout(1));
+C  mfrpush(mfip); mfip=(mfXT**)mfw+1;
+C  while(mfw=*mfip++,mfw) (*mfw)(); // MinForth VM
+C  mfip=(mfXT**)mfrpop(); ;
+
+: __CSYS  \ ( -- col-sys ) stack checkmark during definitions
+   depth invert ;
+
+: __CSYS?  \ ( col-sys -- f ) check stack-checkmark
+   depth + IF -22 throw THEN ;
+
+: :  \ ( <name> -- col-sys ) 6.1.0450 start colon definition  
+   ['] _[:] _header __csys ] ;
+
+DEFER: ;  \ ( col-sys -- ) 6.1.0460 terminate hilevel definition 
+   0 , [,] [ __csys? _reveal ; IMMEDIATE COMPILE-ONLY
+
+: :NONAME  \ ( -- xt colon-sys ) 6.2.0455 start nameless hilevel definition  
+   here 0 , here _latest ! 0 , 0 , , here ['] _[:] @ , __csys ] ;
+
+\ ------ Execution Token Compilation -----------------------------------------
+
+: [']  \ ( <name> -- xt ) 6.1.2510 push name's execution token on stack 
+   ' [,] literal ; IMMEDIATE COMPILE-ONLY
+
+: COMPILE,  \ ( xt -- ) 6.2.0945 compile execution token
+   , ;
+
+: [COMPILE] \ ( <name> -- ) 6.2.2530 parse next word and compile its xt
+   ' compile, ; IMMEDIATE COMPILE-ONLY
+
+\ POSTPONE factors:
+: _POST[ state @ >r ] ;
+: _]PONE r> state ! ;   
+
+: POSTPONE \ ( <name> -- ) 6.1.2033 compile name's compilation semantics
+   _parse-word _find-word dup ~IF -13 throw THEN
+   0< IF [,] _post[ [,] literal [,] , [,] _]pone ELSE , THEN ;
+   IMMEDIATE COMPILE-ONLY
+
+\ ------ String Literals -----------------------------------------------------
+
+: [CHAR]  \ ( <char> -- ) 6.1.2520 compile character 
+   char [,] literal ; IMMEDIATE COMPILE-ONLY
+
+: C,  \ ( c -- ) 6.1.0860 compile char c to dataspace, increment dp
+   here c! 1 allot ;
+
+: _[SLIT]  \ ( -- a u ) string literal runtime
+C  mferr(mfout(2));
+C  mfCell ip=(mfCell)mfip; mfChar c=mfcat(ip);
+C  mfpush(ip+1), mfpush(c);
+C  mfip=(mfXT**)((ip+c+1+MFSIZE)&-MFSIZE); ;
+
+: SLITERAL  \ ( a u -- ) 17.6.1.2212 compile string literal
+   [,] _[slit] swap over here _place 2 + aligned allot ;
+   IMMEDIATE COMPILE-ONLY
+
+: S"  \ ( string" -- a u ) 6.1.2165 get next parsed string
+   '"' _parse-char state @
+   IF [,] sliteral ELSE _>sib _sib count THEN ; IMMEDIATE
+
+: C"  \ ( string" -- ) 6.2.0855 compile counted string inline
+   '"' _parse-char [,] sliteral [,] drop [,] 1- ; IMMEDIATE COMPILE-ONLY 
+
+: ."  \ ( string" -- ) 6.1.0190 type parsed string
+   '"' _parse-char state @
+   IF [,] sliteral [,] type ELSE type THEN ; IMMEDIATE
+
+: __PARSE\"  \ ( string" -- a u ) parse S\" string token
+   __prsarea
+C  mfCell i, u=mftos, ub=0, l, h; mfChar *a=(mfChar*)mfsec, c; 
+C  for (i=0;i<u;i++) { c=a[i];
+C    if (c=='\"') break;
+C    if (c=='\\') { c=a[++i]; 
+C #ifdef _WIN32
+C      if (c=='n') c='m';
+C #endif
+C      switch (c) {
+C      case '\"': c=34; break;
+C      case '\\': c=92; break;
+C      case 'r': c=13; break;
+C      case 'm': mfbuf[ub++]=13; // fall thru
+C	   case 'n': // fall thru
+C      case 'l': c=10; break;
+C      case 'a': c=7; break;
+C      case 'b': c=8; break;
+C      case 'e': c=27; break;
+C      case 'f': c=12; break;
+C      case 'q': c=34; break;
+C      case 't': c=9; break;
+C      case 'v': c=11; break;
+C      case 'z': c=0; break;
+C      case 'x': h=mfdig2n(a[i+1],16); if (h<16) {
+C		         l=mfdig2n(a[i+2],16); if (l<16) {
+C		         i+=2, c=16*h+l; break; } } // fall thru
+C      default: mfbuf[ub++]='\\'; } } 
+C    mfbuf[ub++]=c; }
+C  mfsec=(mfCell)mfbuf, mftos=ub, mfpush(i+1); 
+   >in +! __prsovf ; 
+
+: S\"  \ ( string" -- a u ) 6.2.2266 get next extended string
+   __parse\" state @
+   IF [,] sliteral ELSE _>sib _sib count THEN ; IMMEDIATE
+
+: .\"  \ ( xstring" -- a u ) MF type extended string
+   state @ IF [,] s\" [,] type ELSE [,] s\" type THEN ; IMMEDIATE
+
+\ ------ Flow Control / Decisions --------------------------------------------
+
+: _ABORT" \ ( a u f -- ) display message if flag set and ABORT
+   rot IF -2 THROW ELSE 2drop THEN ;
+   
+: ABORT"  \ ( f string" -- ) 9.6.2.0680 diplay message if flag set and ABORT
+   '"' _parse-char [,] sliteral [,] _abort" ; IMMEDIATE COMPILE-ONLY
+
+DEFER: EXIT \ ( -- ) 6.1.1380 exit actual hilevel word
+   0 , ; IMMEDIATE COMPILE-ONLY  
+
+: _[JMP]  \ ( -- ) jump unconditionally
+C  mfip+=mfat(mfip); ;
+
+: _[JMPZ]  \ ( f -- ) jump if next cell is zero
+C  mfip+=(mfpop()?1:mfat(mfip)); ;
+
+\ Factorization
+: _MARK   here ;                      \ mark jump target
+: _>MARK  here over - cell / swap ! ; \ resolve forward jump 
+: _<MARK  here - cell / , ;           \ solve backward jump
+   
+: IF  \ (flag -- ) 6.1.1700 jump forward if flag = 0
+   [,] _[jmpz] _mark 1 , ; IMMEDIATE COMPILE-ONLY
+
+: ELSE  \ ( a1 -- a2) 6.1.1310 jump forward and resolve forward jump
+   [,] _[jmp] _mark 1 , swap _>mark ; IMMEDIATE COMPILE-ONLY
+	
+: THEN  \ ( a -- ) 6.1.2270 resolve IF or ELSE jump
+   _>mark ; IMMEDIATE COMPILE-ONLY
+
+: CASE  \ ( -- 0 ) 6.2.0873 initialize OF-counter
+   0 ; IMMEDIATE COMPILE-ONLY 
+
+: OF  \ ( x1 x2 -- | x1 ) 6.2.1950 enter OF-part if x1=x2, increment counter
+   [,] over [,] = [,] if [,] drop swap 1+ ; IMMEDIATE COMPILE-ONLY
+
+: ENDOF  \ ( -- ) 6.2.1343 jump forward to just after ENDCASE
+   >r [,] else r> ; IMMEDIATE COMPILE-ONLY
+
+: ENDCASE  \ ( x -- ) 6.2.1342 resolve forward jumps of ENDOFs
+   [,] drop BEGIN dup WHILE swap _>mark 1- REPEAT
+   drop ; IMMEDIATE COMPILE-ONLY   
+
+\ ------ Flow Control / Loops ------------------------------------------------
+   
+: RECURSE  \ ( -- ) 6.1.2120 call the current definition
+   _latest @ _>cfa , ; IMMEDIATE COMPILE-ONLY 
+
+: BEGIN  \ ( -- adr ) 6.1.0760 mark loop for REPEAT/UNTIL
+   _mark ; IMMEDIATE COMPILE-ONLY
+
+: WHILE  \ ( flag -- ) 6.1.2430 if flag not set jump forward to REPEAT
+   [,] if swap ; IMMEDIATE COMPILE-ONLY
+
+: REPEAT  \ ( -- ) 6.1.2140 jump backward to BEGIN
+   [,] _[jmp] _<mark _>mark ; IMMEDIATE COMPILE-ONLY
+
+: UNTIL  \ ( flag -- ) 6.1.2390 if flag not set jump backward to BEGIN
+   [,] _[jmpz] _<mark ; IMMEDIATE COMPILE-ONLY
+
+: AGAIN     \ ( adr -- ) 6.2.0700 unconditional backward jump
+   [,] _[jmp] _<mark ; IMMEDIATE COMPILE-ONLY
+
+\ ------ Flow Control / Counted Loops ----------------------------------------
+
+: _[LOOP]  \ ( ofs -- f ) increment loop counter and jump
+C  mfCell ofs=mftos,pr=mfrtos,po=pr+ofs;
+C  mftos=!(ofs<0?(po<0)&&(pr>=0):(po>=0)&&(pr<0));
+C  mfrtos=po; ;
+
+: _[DO]  \ ( end start -- r: end delta ) set up loop parameters
+   swap >r r@ - >r 0 ; \ initial increment zero
+
+: _[?DO]  \ ( limit start -- f ) start counted ?do loop
+   _[do] drop r@ 0= ;
+
+: __DO  \ compile loop head
+   _mark [,] _[loop] [,] if swap 0 ;
+
+: DO  \ ( end start -- ) 6.1.1240 begin counted DO p
+   [,] _[do] __do ; IMMEDIATE COMPILE-ONLY
+
+: ?DO  \ ( limit start -- ) 6.2.0260 begin DO loop, if limit=start skip 
+   [,] _[?do] __do ; IMMEDIATE COMPILE-ONLY
+
+: I  \ ( -- n ) 6.1.1680 inner loop index
+C  mferr(mfrin(2);mfout(1));
+C  mfpush(mfrtos+mfrsec); ; COMPILE-ONLY 
+
+: J  \ ( -- n ) 6.1.1730 outer loop index
+C  mferr(mfrin(4);mfout(1));
+C  mfpush(mfrp[-2]+mfrp[-3]); ; COMPILE-ONLY
+   
+: UNLOOP  \ ( -- ) 6.1.2380 discard loop parameters
+C  mferr(mfrin(3));
+C  mfrp-=2; ; COMPILE-ONLY
+
+: LEAVE  \ ( -- ) 6.1.1760 leave loop immediately
+   0 [,] literal [,] _[jmp]
+C  mfCell *s=mfsp,a=0,f=-1;   
+C  while(s>mfstk){if(!*s){a=*(s-1)+MFSIZE,f=0;break;}s--;};  
+C  mfpush(a); mfpush(f);   
+   IF -22 throw THEN _<mark ; IMMEDIATE COMPILE-ONLY 
+
+: +LOOP  \ ( n -- ) 6.1.0140 add n to loop index and loop back
+   drop [,] repeat [,] unloop ; IMMEDIATE COMPILE-ONLY 
+
+: LOOP  \ ( -- ) 6.1.1800 increment loop index and loop back
+   1 [,] literal [,] +loop ; IMMEDIATE COMPILE-ONLY
+
+: BOUNDS  \ ( adr len -- lim first ) MF prepare address range for DO..LOOPs
+   over + swap ;    
+
+\ ------ Data Storing Words --------------------------------------------------
+   
+: _[VAR]  \ ( -- a ) VARIABLE runtime
+C  mferr(mfout(1));
+C  mfpush(mfw+1); ;
+
+: VARIABLE  \ ( <name> -- ) 6.1.2410 create variable, initialize to zero 
+   ['] _[var] _header 0 , _reveal ;
+
+: _[CONST]  \ ( -- x ) CONSTANT runtime
+C  mferr(mfout(1));
+C  mfpush(mfat(mfw+1)); ;
+
+: CONSTANT  \ ( x <name> -- ) 6.1.0950 create constant x
+   ['] _[const] _header , _reveal ;
+   
+: _[BUF]  \ ( -- a ) BUFFER: runtime
+C  mferr(mfout(1));
+C  mfpush(mfw+2); ;
+
+: BUFFER:  \ ( u <name> -- ) 6.2.0825 create buffer with byte-length u  
+   ['] _[buf] _header dup , allot align _reveal ;
+
+\ ------ CREATE DOES> --------------------------------------------------------
+
+: _[CREATE]  \ ( -- .. ) execute method with created data address
+C  mferr(mfout(2));
+C  mfpush(mfw+2), mfpush(mfat(mfw+1));
+   execute ;
+
+: CREATE  \ ( <name> -- adr ) 6.1.1000 create header for data area
+   ['] _[create] _header [,] noop _reveal ;
+
+: _<DOES  \ ( -- ) patch created header with runtime method address
+   _latest @ _>cfa cell+ ! ;
+
+DEFER: DOES>  \ ( -- ) 6.1.1250 compile runtime method
+   __csys? __csys here 4 cells + [,] literal [,] _<does 0 , ['] _[:] @ , ;
+   IMMEDIATE COMPILE-ONLY
+
+: >BODY  \ ( cfa -- pfa ) 6.1.0550 get data address
+   dup @ ['] _[create] @ = IF cell+ THEN cell+ ; 
+
+\ ------ RECOGNIZER ----------------------------------------------------------
+
+: RECOGNIZER  \ ( recxt rxt cxt <name> -- ) MF append new recognizer to list
+   create _reclist BEGIN dup @ 1- here u< WHILE @ REPEAT
+   here swap ! 0 , , , , ;
+
+\ ------ VALUE ---------------------------------------------------------------
+
+\ Values record: {v+,v!,v@,data..}
+: _>V+   cell+ @ ;     ( 'val -- 'v+ )
+: _>V!   2 cells + @ ; ( 'val -- 'v! )
+: _>V@   3 cells + @ ; ( 'val -- 'v@ ) 
+: _>VD   4 cells + ;   ( 'val -- adr )
+
+: _[VAL]  \ ( -- x ) MF push value on stack
+C  mferr(mfout(1));
+C  mfpush(mfw+4), mfw=(mfXT*)mfat(mfw+3); (*mfw)(); ;
+
+: _(VALUE)  \ ( x v@ v! v+ -- ) MF compile value record
+   ['] _[val] _header , , , _reveal ; 
+
+: VALUE  \ ( x <name' -- ) 6.2.2405 create Forth value
+   ['] @ ['] ! ['] + _(value) , ; 
+
+: __?VAL  \ ( <name> -- 'val ) TO factor
+   ' dup @ ['] _[val] @ = ~IF -32 throw THEN ; 
+ 
+DEFER: TO  \ ( x <name> -- ) 6.2.2295 store x in value
+   __?val dup _>vd swap _>v! state @
+   IF swap [,] literal , ELSE execute THEN ; IMMEDIATE
+
+DEFER: +TO  \ ( x <name> -- ) MF add x to value 
+   __?val dup >r state @
+   IF , r@ _>v+ , r@ _>vd [,] literal r> _>v! ,
+   ELSE execute r@ _>v+ execute r@ _>vd r> _>v! execute
+   THEN ; IMMEDIATE
+
+\ ------ Deferred Words ------------------------------------------------------
+
+: _[DEFER]  \ ( -- ) MF execute deferred word
+C  mfw=(mfXT*)(mfat(mfw-2)&-4); (*mfw)(); ;
+
+: DEFER@  \ ( xt1 -- xt2 ) 6.2.1177 get execution reference 
+   _<cfa _>pfa @ -4 and ;
+
+: DEFER!  \ ( xt2 xt1 -- ) 6.2.1175 set execution reference
+   _<cfa _>pfa swap dup _<cfa _>pfa @ 3 and or swap ! ;
+
+: DEFER  \ ( <name> -- ) 6.2.1173 create deferred word
+   ['] _[defer] _header ['] noop here cell- defer! _reveal ;
+
+: __?DEF  \ IS factor
+   ' dup @ ['] _[defer] @ <> IF -32 THROW THEN ;
+   
+: ACTION-OF  \ ( <name> -- xt ) 6.2.0698 get deferred execution reference
+   __?def state @ IF [,] literal [,] defer@ ELSE defer@ THEN ; IMMEDIATE
+
+: IS  \ ( xt <name> -- ) 6.2.1725 set deferred word to execute xt 
+   __?DEF state @ IF [,] literal [,] defer! ELSE defer! THEN ; IMMEDIATE
+
+\ ------ MARKER --------------------------------------------------------------
+
+: _[MARKER]  \ ( pfa -- ) restore dictionary context
+   @ dup dup @ _last ! cell+ dup @ _latest ! cell+ dup @ _current ! 
+   cell+ dup _context 8 cells move 8 cells + 
+   _wordlists BEGIN over @ over ! 2 cells + @ dup 1- here u<
+      WHILE swap cell+ swap REPEAT 2drop _dp ! ;
+
+: MARKER  \ ( <name> -- ) 6.2.1850 save dictionary context for restoral
+   here _last @ , _latest @ , _current @ ,
+   _context here 8 cells dup allot move
+   _wordlists BEGIN dup @ , 2 cells + @ dup 1- here u> UNTIL drop
+   create , ['] _[marker] _<does ;
+
+\ ------ Environmental Queries -----------------------------------------------
+
+DEFER: _ENVIRONMENT?  \ ( a u -- .. f ) MF environment query hook
+   2dup s" /COUNTED-STRING" str= IF 2drop 255 true EXIT THEN
+   2dup s" /HOLD" str= IF 2drop 21 cells true EXIT THEN   
+   2dup s" /PAD" str= IF 2drop 256 true EXIT THEN   
+   2dup s" ADDRESS-UNIT-BITS" str= IF 2drop 8 true EXIT THEN
+   2dup s" FLOORED" str= IF 2drop false true EXIT THEN
+   2dup s" MAX-CHAR" str= IF 2drop 255 true EXIT THEN
+   2dup s" MAX-D" str= IF 2drop -1 i" mfpush(INTPTR_MAX);" true EXIT THEN
+   2dup s" MAX-N" str= IF 2drop i" mfpush(INTMAX_MAX);" true EXIT THEN
+   2dup s" MAX-UD" str= IF 2drop -1 -1 true EXIT THEN
+   2dup s" MAX-U" str= IF 2drop -1 true EXIT THEN
+   2dup s" RETURN-STACK-CELLS" str= IF 2drop i" mfpush(mfrstsize);" -1 EXIT THEN
+   2dup s" STACK-CELLS" str= IF 2drop i" mfpush(mfstksize);" -1 EXIT THEN
+   2dup s" CORE" str= IF 2drop true true EXIT THEN
+   2dup s" CORE-EXT" str= IF 2drop true true EXIT THEN
+   2drop false ;
+
+: ENVIRONMENT?  \ ( a u -- .. f ) 6.1.1345 environment query
+   caps @ IF
+C    for (int i=0; i<mftos; i++) mfbuf[i]=toupper(*(char*)(mfsec+i));
+C    mfsec=(mfCell)mfbuf;
+   THEN _environment? ;
+
+\ ------ Boot Vectors --------------------------------------------------------
+
+VARIABLE __NOLOGO  \ MF no-show-logo flag, set by commandline argument /nl
+VARIABLE __BOOTED  \ MF boot flag
+
+DEFER: _BOOT  \ ( -- ) MF MinForth boot sequence (called from mf3.mfc)
+C  mfinit(); ;
+
+DEFER: _START ;  \ ( -- ) MF evaluate start parameters and autoexec file
+
+DEFER: _LOGO  \ ( -- ) MF display MinForth version logo
+   __nologo @ ~IF ." MinForth V3.4.8" THEN ;
+
+DEFER: _RESET-STACKS  \ ( -- ) MF clear stacks on abort
+   0 _sp! 0 _fp! 0 _lp! ;
+
+: _ABORT  \ ( -- ) 6.1.0670 clear data stack(s) and resume QUIT
+C  setjmp(mfabort);
+   __booted @ ~IF __booted on _start _logo THEN
+   _reset-stacks state @ IF _latest @ _>name _dp ! THEN
+   quit ;
+
+: ABORT  \ ( -- ) 9.6.2.0670 throw -1 and perform semantics of core ABORT
+   -1 throw ;
+
+DEFER: BYE  \ ( -- ) 15.6.2.0830 return control to the host (OS or callee)
+   ." \nBye. "
+C  mfexit(), exit(0); ;
+
+\ ====== MINFORTH CORE =======================================================

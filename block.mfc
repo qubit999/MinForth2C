@@ -1,0 +1,181 @@
+\ ============================================================================
+\ MINFORTH V3.4 BLOCK WORDSET
+\ ============================================================================
+\ provided 'as is' as per license conditions in file mflicense.txt 
+
+#INCLUDE file.mfc
+\ already in CORE wordset
+\ BLK  7.6.1.0790
+C
+C #define MFBLOCK
+
+\ Note: Block editor is in file BLEDITOR.MFC
+
+\ ------ Block Mass-Storage --------------------------------------------------
+\ Block mass-storage is implemented as blockfiles with binary access mode.
+\ If no blockfile is specified, default blockfile mfblocks.blk is (re)created
+
+2 CELLS BUFFER: _BFILE  \ MF actual blockfile id, bibs address
+
+: __BID   _bfile @ ;        \ ( -- bid ) MF blockfile id
+: __BIBS  _bfile cell+ @ ;  \ ( -- adr ) MF address of 2 block input buffers
+: __#BIB  2 cells 1024 + ;  \ ( -- u ) MF block input buffer length
+
+VARIABLE _CURBIB            \ ( -- cbib ) MF actual block input buffer
+
+\ buffer struct {2x(upd,blk,buf[1024]),name}
+
+: __ALLOCBIBS  \ ( a u bid -- ) MF allocate two bibs and append name
+   _bfile ! dup 2 + __#bib 2* + allocate throw dup _bfile cell+ !
+   dup _curbib ! 0 0 pluck 2! __#bib + 0 0 pluck 2! __#bib + _place ;
+
+: CLOSE-BLOCKFILE  \ ( -- ) MF close blockfile
+   __bid ?dup IF close-file throw __bibs free throw 0 0 _bfile 2! THEN
+   _curbib off ;
+
+: OPEN-BLOCKFILE  \ ( a u -- ) MF open named blockfile
+   close-blockfile 2dup r/w bin open-file throw
+   \ dup file-size throw 1024 um/mod drop IF -260 throw THEN
+   __allocbibs ;
+
+: CREATE-BLOCKFILE  \ ( a u --  ) MF create&open  blockfile with 40 blocks
+   close-blockfile 2dup r/w bin create-file throw
+   here 64 bl fill 16 40 * FOR here 64 pluck write-file throw NEXT
+   __allocbibs ;
+
+: __?BFILE  \ ( -- ) MF check if blockfile is present (default mfblock.blk)
+   __bid ~IF s" mfblocks.blk" 2dup file-status nip
+     IF create-blockfile ELSE open-blockfile THEN THEN ;
+
+: __?BID  __?bfile __bid ;  \ ( -- bid ) MF blockfile id
+: __?BIBS __?bfile __bibs ; \ ( -- bibadr ) MF block input buffers
+
+: BLOCKFILE-NAME  \ ( -- a u ) MF blockfile name
+   __?bibs __#bib 2* + count ;
+
+: BLOCKFILE-SIZE  \ ( - u ) MF number of blocks in blockfile
+   __?bid file-size throw 1024 um/mod swap IF 1+ THEN ;
+
+: RESIZE-BLOCKFILE  \ ( u -- ) MF resize blockfile to u blocks
+   dup 1 2048 within ~IF -35 throw THEN
+   1024 um* __?bid resize-file throw __bid flush-file throw ;
+
+: __BSEEK  \ ( u -- ) MF position file pointer to block start
+   1024 um* __?bid reposition-file throw ;
+
+: BLOCK-READ  \ ( buf u -- ) MF read block to buffer
+   dup blockfile-size u< ~IF -33 throw THEN __bseek
+   dup 1024 __bid read-file throw  \ buf read
+   1024 over - >r + r> bl fill ;
+
+: BLOCK-WRITE  \ ( buf u -- ) MF write or append block from buffer
+   dup 0 2048 within ~IF -35 throw THEN __bseek
+   1024 __bid write-file IF -34 throw THEN __bid flush-file throw ;
+
+: BLOCK-FILL  \ ( u c -- ) MF fill block with character
+   over 0 2048 within ~IF -35 throw THEN here 64 rot fill __bseek
+   16 FOR here 64 __bid write-file throw NEXT __bid flush-file throw ;
+
+\ ------ Block Buffers -------------------------------------------------------
+
+: __FORBIBS __?bibs 2 __#bib ; \ MF factoring
+
+: EMPTY-BUFFERS  \ ( -- ) 7.6.2.1330 unassign all buffers
+   __forbibs FOR> 0 0 n 2! NEXT ;
+
+\ update flag: 0=absent, -1=modified, 1=unmodified
+
+: __FLUSHBIB  \ ( bib -- ) MF flush buffer if modified
+   dup @ 0< IF dup cell+ dup @ swap cell+ swap block-write 1 swap !
+   ELSE drop THEN ;
+
+: SAVE-BUFFERS  \ ( -- ) 7.6.1.2180 save all buffers to file
+   __forbibs FOR> n __flushbib NEXT ;
+
+: FLUSH  \ ( -- ) 7.6.1.1559 save and unassign all buffers
+   save-buffers empty-buffers ;
+
+: UPDATE  \ ( -- ) 7.6.1.2400 mark current block buffer as modified
+   _curbib @ ?dup IF on THEN ;
+
+: __!CURBIB  \ ( bib -- buf ) \ MF factoring
+   dup _curbib ! 2 cells + ;
+
+: BUFFER  \ ( u -- adr ) 7.6.1.0820 assigned block buffer address
+   __forbibs FOR> n cell+ @ over = IF drop n __!curbib EXIT THEN NEXT
+   __forbibs FOR> n cell+ @ ~IF 0 n 2! n __!curbib EXIT THEN NEXT
+   __bibs _curbib @ over = IF __#bib + THEN \ u curbib
+   dup __flushbib swap 0 pluck 2! __!curbib ;
+
+VARIABLE __CURBUF   \ filled block buffer address
+VARIABLE __CURSIZE  \ actual block-file size
+
+: BLOCK  \ ( u -- adr ) 7.6.1.0800 fill block into assigned buffer
+   blockfile-size 2dup u< ~IF -35 throw THEN __cursize ! buffer \ curbuf
+   _curbib @ @ ~IF _curbib @ dup cell+ @ pluck swap block-read 1 swap ! THEN
+   dup __curbuf ! ;
+
+\ ------ Displaying Blocks ---------------------------------------------------
+
+VARIABLE SCR  \ 7.6.2.2190 last displayed block number
+
+: LIST  \ ( u -- ) 7.6.2.1770 display block u (unbuffered)
+   dup 0 blockfile-size dup >r within ~IF -35 throw THEN dup scr !
+   dup cr ." --- BLOCK # " . ." of " r> . ." in " blockfile-name type space
+   block 16 FOR cr n 1+ 2 .r ':' emit space dup 64 type 64 + space ':' emit
+   NEXT drop ;
+
+: TRIAD  \ ( u -- ) MF list 3 consecutive screens
+   3 FOR n over + list NEXT drop ;
+
+\ ------ Loading Blocks ------------------------------------------------------
+
+: LOAD  \ ( u -- .. ) 7.6.1.1790 interpret source block u
+   dup 1 < IF -35 throw THEN
+   _src>r __fsrc>r __bid _srcid! dup blk ! block 64 _src2!
+   _sln off BEGIN _sln @ 16 < dup WHILE drop _sln incr
+     >in off ['] _interpret catch ?dup IF BREAK THEN
+   64 _srcadr +! REPEAT
+   ^IF _excsrc ." in " blockfile-name type
+       ."  in BLOCK " blk @ . ." line " _sln @ . THEN
+   __r>fsrc _r>src blk @ ?dup IF block 64 _src2! THEN throw ;
+
+: THRU  \ ( u1 u2 -- ) 7.6.2.2280 load blocks u1 to u2
+   over - 1+ 1 FOR> n load NEXT ;
+
+: -->  \ ( -- ) MF load next block
+   refill drop ; IMMEDIATE
+
+\ ------ Core Integration ----------------------------------------------------
+
+: __BLKREFILL  \ ( -- fl ) 7.6.2.2125 make next block the block input source
+   blk @ ~IF deferred refill EXIT THEN
+   blk @ blockfile-size 1- < ~IF false EXIT THEN blk incr
+   blk @ block _srcadr ! >in off true ;
+IS REFILL
+
+: __BL\  \ ( -- ) 7.6.2.2535 discard rest of parsed line
+   blk @ ~IF deferred \ EXIT THEN
+   64 >in @ 64 mod - >in +! ;
+IS \
+
+: __BL\S  \ ( -- ) MF discard rest of parsed block
+   blk @ ~IF deferred \s EXIT THEN 1024 >in ! ;
+IS \S
+
+: __BLEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -33 OF ." block read exception" EXIT ENDOF
+     -34 OF ." block write exception" EXIT ENDOF
+     -35 OF ." invalid block number" EXIT ENDOF
+	 -260 OF ." invalid block-file" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __BLENVIRONMENT?  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" BLOCK" str= IF 2drop true true EXIT THEN
+   2dup s" BLOCK-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

@@ -1,0 +1,296 @@
+/*============================================================================
+  MINFORTH V3.4 SYSTEM-SPECIFIC FUNCTIONS
+  ============================================================================
+  provided "as is" as per license conditions in file mflicense.txt 
+*/
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <termios.h>   // for tcgetattr/tcsetattr, struct termios, ECHO, ICANON, ISIG, VTIME, VMIN, TCSANOW
+#include <string.h>   // for strlen, strncmp
+#include <strings.h>  // for strncasecmp
+
+/* On macOS <unistd.h> and <fcntl.h> were already pulled in by mf3.h,
+   but we need <termios.h>, <string.h> and <strings.h> here. */
+
+// ------ Windows ------------------------------------------------------------
+#if defined _WIN32
+DWORD mfprot;
+
+void mfsegvhandler(int signal) { // memory segfault exception handler
+	if (signal!=SIGSEGV) return;
+	mfthrow(-9); }
+
+BOOL WINAPI mfinthandler(DWORD signal) { // user exception handler
+	if (signal!=CTRL_C_EVENT) return FALSE;
+	mfthrow(-28);
+	return TRUE; }
+
+void mfinit(void) { // set up system before MinForth start
+	HANDLE hStdout; DWORD mode;
+	signal(SIGSEGV,mfsegvhandler);
+	VirtualProtect(mfdsp,MFDSPSIZE,0x40,&mfprot);
+	SetConsoleCtrlHandler(mfinthandler,TRUE); 
+	hStdout= GetStdHandle(STD_OUTPUT_HANDLE);
+	GetConsoleMode(hStdout,&mode);
+	SetConsoleMode(hStdout,mode|4);	} // VT100 emulation
+
+void mfexit(void) { // clean up system on MinForth termination
+	signal(SIGSEGV,SIG_DFL);
+    SetConsoleCtrlHandler(NULL,FALSE); }
+	
+int mfkeyq(void) { // check keyboard for pending raw key
+	return (_kbhit()?-1:0); }
+
+int mfkey(void) { // retrieve raw key from keyboard
+	return _getch(); }
+
+int mfemitq(void) { // check output terminal readiness
+	return -1; }
+
+void mfemit(mfCell c) { // send character to terminal
+	fputc((char)c,stdout); }
+
+void mftype(mfCell a, mfCell u) { // send Forth string string to terminal
+	if (u>0) fwrite((char*)a,(size_t)u,1,stdout); }
+
+void mfprint(char* s) { // send C string to terminal
+	fputs(s,stdout); }
+
+// ------ Linux or Unixoids --------------------------------------------------
+#elif defined __linux__
+
+struct termios mfnewtset, mfoldtset; /* terminal settings */
+int mffcntl, mfpending = 256;	     /* keyboard parameters */
+
+void mfsegvhandler(int signal) { // memory segfault exception handler
+	if (signal!=SIGSEGV) return;
+	mfthrow(-9); }
+
+void mfinthandler(int signal) { // user exception handler
+	if (signal!=SIGINT) return;
+	mfthrow(-28); }
+	
+void mffpehandler(int signal) { // division by zero
+	if (signal!=SIGFPE) return;
+	mfthrow(-10); }
+
+void mfinit(void) { // set up system before MinForth start
+	signal(SIGSEGV,mfsegvhandler);
+	signal(SIGINT,mfinthandler);
+	signal(SIGFPE,mffpehandler);
+    tcgetattr(STDIN_FILENO, &mfoldtset);
+    mfnewtset = mfoldtset;
+    mfnewtset.c_lflag    &= ~(ECHO | ICANON | ISIG);
+    mfnewtset.c_iflag    &= ~ICRNL;
+    mfnewtset.c_cc[VTIME] = 0;
+    mfnewtset.c_cc[VMIN]  = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &mfnewtset); 
+	mffcntl=fcntl(STDIN_FILENO,F_GETFL);
+    fcntl(STDIN_FILENO,F_SETFL,mffcntl|O_NONBLOCK); }
+	
+void mfexit(void) { // clean up system on MinForth termination
+	signal(SIGSEGV,SIG_DFL);
+	signal(SIGINT,SIG_DFL);
+	signal(SIGFPE,SIG_DFL);
+    tcsetattr(STDIN_FILENO, TCSANOW, &mfoldtset); 
+	fcntl(STDIN_FILENO,F_SETFL,mffcntl); }
+	
+int mfemitq(void) { // check output terminal readiness
+	return -1; }
+
+void mfemit(mfCell c) { // send character to terminal
+	write(STDOUT_FILENO,&c,1); }
+
+void mftype(mfCell a, mfCell u) { // send Forth string string to terminal
+	if (u>0) write(STDOUT_FILENO,(char*)a,u); }
+
+void mfprint(char* s) { // send C string to terminal
+	write(STDOUT_FILENO,s,strlen(s)); }
+
+int mfkeyq(void) { // check keyboard for pending raw key
+	char key;
+    if (mfpending == 256) {
+      if (read(STDIN_FILENO, &key, 1)<=0) return 0;
+      if (key == 127) key = '\b';
+      mfpending = key; }
+    return -1; }
+
+int mfkey(void) { // retrieve raw key from keyboard
+	char key; 
+    if (mfpending == 256) {
+      do { usleep(5000); } while (!mfkeyq()); }
+    key = mfpending, mfpending = 256;
+    return key; }
+
+// ------ DOS with djgpp Compiler --------------------------------------------
+#elif defined __DJGPP__
+
+void mfinit(void) { // set up system before MinForth start
+	}
+
+void mfexit(void) { // clean up system on MinForth termination
+	}
+	
+int mfkeyq(void) { // check keyboard for pending raw key
+	return (kbhit()?-1:0); }
+
+int mfkey(void) { // retrieve raw key from keyboard
+    return getch(); }
+
+int mfemitq(void) { // check output terminal readiness
+	return -1; }
+
+void mfemit(mfCell c) { // send character to terminal
+	fputc((char)c,stdout); }
+
+void mftype(mfCell a, mfCell u) { // send Forth string string to terminal
+	if (u>0) fwrite((char*)a,(size_t)u,1,stdout); }
+
+void mfprint(char* s) { // send C string to terminal
+	fputs(s,stdout); }
+
+// ------ Unsupported OS -----------------------------------------------------
+#else
+#error -- Unsupported Host --
+#endif
+
+// ------ Dictionary Search --------------------------------------------------
+
+#if defined _WIN32 || defined __DJGPP__
+
+int (*mfcmp)(const void*,const void*,size_t); // name compare function
+void mfsetcmp(mfCell c) { // set compare function
+	mfcmp = (c ? _memicmp : memcmp); }
+
+#else
+
+int (*mfcmp)(const char*,const char*,size_t); // name compare function
+void mfsetcmp(mfCell c) { // set compare function
+	mfcmp = (c ? strncasecmp : strncmp); }
+
+#endif
+
+mfXT* mfxt; // search result
+
+int mfsearchnt(mfCell af, mfCell uf, mfCell hf) {  // ( a u wid -- 0 | xt f )
+  mfHdr *p, *h=(mfHdr*)hf; char *a=(char*)af, u=(char)uf, *n; int f;
+  mfxt=NULL, f=0;
+  while (p=h->link,p) { n=h->nfa;
+    if ((u==*n)&&!mfcmp(++n,a,u)) {
+	  mfxt=&h->cfa, f=(int)(h->pfa), f=(f&1?1:-1)*(f&2?2:1); break; }
+	h=p; }
+  return f; }
+
+int mfseeknt(mfCell af, mfCell uf) { // ( a u -- 0 | xt f )
+  mfHdr *h=(mfHdr*)MFLATEST; char u=(char)uf,*a=(char*)af, *n; int i=0, f;
+  mfxt=NULL, f=0;
+  while (h>(mfHdr*)mfdsp) { n=h->nfa;
+    if ((u==*n)&&!mfcmp(++n,a,u)) goto nts;
+    h=(mfHdr*)*((mfCell*)h-1); }
+  for (i=MFPRIMS;i>0;i--) { h=mfdict+i, n=h->nfa; 
+    if ((u==*n)&&!mfcmp(++n,a,u)) {
+nts:  mfxt=&h->cfa, f=h->pfa, f=(f&1?1:-1)*(f&2?2:1); } } 
+  return f; }
+
+int mfseekxt(mfCell af) {  // ( adr -- xt ofs | -1 ) 
+  mfHdr *h=(mfHdr*)MFLATEST; mfXT *a=(mfXT*)af, *xt; char *e=(char*)mfdp; 
+  mfxt=a; if (af&~-MFSIZE) return -1; 
+  while (h>(mfHdr*)mfdsp) { xt=&h->cfa;  
+    if ((a>=xt)&&((char*)a<e)) { mfxt=xt; return a-xt; } 
+    e=h->nfa, h=(mfHdr*)*((mfCell*)h-1); } 
+  for (int i=MFPRIMS;i>0;i--) { h=mfdict+i, xt=&h->cfa; 
+    if (a==xt) { mfxt=xt; return 0; } } 
+  return -1; } 
+  
+// ------ Number Output ------------------------------------------------------
+// (avoid printf et al to reduce footprint)
+
+int mfdig2n(mfChar d, int base) { // convert digit to number in BASE
+	d=toupper(d);
+	if (d>='A') d-='7'; else if (d<='9') d-='0';
+	return (d<(mfChar)base ? d : 256); }	
+	
+int mfn2dig(mfCell n, int base) { // convert number in BASE to digit
+	if ((mfUCell)n>=(mfUCell)base) return 256;
+	n += (n<=9 ? '0' : '7');
+	return n; } 
+
+void mfprintun(mfUCell u) { // print unsigned decimal number
+    char buf[3*MFSIZE]; int i=3*MFSIZE;
+	buf[--i]=0;
+	do { char c=(char)(u%10); c=c>9?c+'7':c+'0'; buf[--i]=c; 
+	     u/=10; } while(u);
+    mfprint(buf+i); }
+
+void mfprintn(mfCell n) { // print signed decimal number
+	if (n<0) n=-n,mfemit('-');
+	mfprintun(n); }
+	
+void mfprintux(mfUCell u) { // print unsigned hex number
+	char buf[3*MFSIZE]; char c; int i=3*MFSIZE;
+    buf[--i]=0;
+    do { c=u&0xf; c+=(c>9?'7':'0'); buf[--i]=c; 
+	     u>>=4; } while(u);
+    mfprint(buf+i); }
+
+void mfprintx(mfCell n) { // print signed hex number
+	if (n<0) n=-n,mfemit('-');
+	mfprintux(n); }
+
+void mfprintf(double f) { // print floating-point number (5 signif. digits) 
+	double m, e, s=copysign(1.,f), uf=copysign(f,+1.);  
+    mfCell ma, ex, si; char c, b[6]; b[5]=0; 
+	if (s<0.) mfemit('-'); 
+	if (isnan(f)) { mfprint("nan"); return; } 
+	if (isinf(f)) { mfprint("inf"); return; }
+	if (uf==0.) { mfprint("0."); return; } 
+	m=log10(uf), e=1.+floor(m), m=pow(10.,m-e), m=round(m*1.e5);
+	if (m==1.e5) { e+=1, m/=10.; } if (m==0.) e=0.;
+    ma=(mfCell)m, ex=(mfCell)e;
+	for (si=4;si>=0;si--) { c=(char)(ma%10)+'0', b[si]=c, ma/=10; } 
+    for (si=5;si>1;si--) { if (b[si-1]!='0') break; }
+	if (ex>5||ex<=-5) { // fs.
+ 	  mfemit(b[0]), mfemit('.');
+      mftype((mfCell)b+1,si-1),
+	  mfemit('E'), mfprintn(ex-1); }
+    else {
+      if (ex<=0) { 
+	    mfprint("0."); while (ex++) { mfemit('0'); } mftype((mfCell)b,si); }
+	  else { si=max(ex,si), ex-=1; 
+        for (int i=0;i<si;i++) { mfemit(b[i]); if (i==ex) mfemit('.'); } } } }
+
+// ------ Lolevel Tracer (stepping debugger) ---------------------------------
+
+void mfStacks(int xf, int rf) { // show stack content
+	mfCell n,*p; mfFlt *f; 
+	if (mffp>mffst) {
+	  f=mffst+1, mfprint("f: ");
+	  while (f<=mffp) {
+	    mfprintf(*f++);
+		mfemit(' '); }
+	  mfprint("| "); }
+	if (rf&&(mfrp>mfrst)) { 
+	  mfprint("r: "); p=mfrst+1;
+	  while (p<=mfrp) {
+	    n=*p++;
+		if (xf) mfprintx(n); else mfprintn(n); 
+	    mfemit(' '); }
+	  mfprint("| "); }  
+    if (mfsp>mfstk)	{
+	  p=mfstk+1;
+      while (p<=mfsp) {
+	    n=*p++;
+		if (xf) mfprintx(n); else mfprintn(n); 
+		mfemit(' '); } } }
+		
+void mfTR(char* cmd) { // low-level tracer for primitives 
+    static int xf=0,rf=0;
+l1: mfemit('\n'), mfStacks(xf,rf);
+	if (xf) mfprint("t$ "); else mfprint("t# ");
+	mfprint(cmd), mfemit(' ');
+	switch(mfkey()) {
+	  case 'b': mfemit('\n'), mfexit(), exit(1);
+	  case 'd': xf=0; goto l1;
+	  case 'x': xf=-1; goto l1;
+      case 'r': rf^=-1; goto l1; } }

@@ -1,0 +1,195 @@
+\ ============================================================================
+\  MINFORTH V3.4 LOCALS WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+#INCLUDE core.mfc
+#INCLUDE search.mfc
+\ optional:
+\ #INCLUDE double.mfc
+\ #INCLUDE float.mfc
+\ #INCLUDE complex.mfc
+
+\ ------ Runtime -------------------------------------------------------------
+
+: _[L:]  \ ( depth -- ) MF reserve locals stack space
+C  mfCell ld=mfat(mfip++); mflp-=ld;
+C  memset(mflp,0,MFSIZE*ld), *mflp=ld; ;
+
+: _[;L]  \ ( -- ) MF reset locals stack pointer
+C  mflp+=*mflp; ;
+
+: _[L]  \ ( -- locadr) MF get locals address within locals stack
+C  mferr(mfout(1));
+C  mfpush(mflp+mfat(mfip++)); ;
+
+: _[LOC@]  \ ( cfa -- ) MF identifier runtime compiles read local
+C  mferr(mfout(2));
+   [,] _[l] i" mfpush(mfw);" dup _>vd @ , _>v@ , ;
+
+: __(LOC!)  \ ( 'loc -- ) MF compile store to given local
+   [,] _[l] dup _>vd @ , _>v! , ;
+
+: __(LOC+!)  \ ( 'loc -- ) MF compile add to given local
+   [,] _[l] dup _>vd @ , dup _>v@ , dup _>v+ , __(loc!) ;
+
+\ ------ Local Identifiers ---------------------------------------------------
+   
+VARIABLE __TLOCS   VARIABLE __TLOCE  \ temporary local identifiers start/end
+VARIABLE __ULOCS   VARIABLE __ILOCS  \ number of un/initialized locals
+VARIABLE __OLOCS                     \ flag/number of output locals
+VARIABLE __ULOCF   VARIABLE __LSYNF  \ uninitialized locals / syntax flag
+VARIABLE __LDEPTH  VARIABLE __LTYP   \ locals stack depth / type
+
+: __PREP-LOCALS  \ ( -- ) MF prepare local identifiers 
+   __lsynf @ 0< IF -321 THROW THEN 
+   __emptywl _tempwl ! here dup __tlocs ! __tloce ! __olocs off
+   __ilocs off __ulocs off __ulocf off __ltyp off __lsynf off 1 __ldepth ! ; 
+
+: __(LOCAL)  \ ( a u l@ l! l+ ls -- ) MF create single local
+   _latest @ 2>r >r 2swap named ['] _[loc@] _header r> , , , __ldepth @ , 
+   _tempwl @ _latest @ ! _latest @ _tempwl ! immediate compile-only
+   2r> _latest ! __ldepth +! 1 __ulocf @ IF __ulocs ELSE __ilocs THEN +! ;
+
+: __NEW-LOCAL  \ ( a u -- ) MF create new local identifier
+   __ltyp @ CASE
+     0 OF ['] @ ['] ! ['] + 1 __(local) ENDOF
+#IFDEF D+
+	 1 OF ['] 2@ ['] 2! ['] d+ 2 __(local) ENDOF
+#ENDIF
+#IFDEF F+
+	 2 OF ['] f@ ['] f! ['] f+ i" mfpush(MFFLTSIZE);" __(local) ENDOF
+#ENDIF
+#IFDEF Z+ 
+	 3 OF ['] z@ ['] z! ['] z+ i" mfpush(2*MFFLTSIZE);" __(local) ENDOF
+#ENDIF
+   ENDCASE ( __ltyp off ) ;  \ type persistence
+
+: __LAST-LOCAL  \ ( -- ) MF finish creation of local identifiers
+   __ldepth @ 1 = IF EXIT THEN here __tloce ! [,] _[l:] __ldepth @ ,
+   _tempwl @ __lsynf @
+   IF   __ulocs @ FOR @ NEXT
+	    __ilocs @ FOR dup _>cfa __(loc!) @ NEXT drop 
+   ELSE __ilocs @ FOR dup >r @ NEXT drop
+	    __ilocs @ FOR r> _>cfa __(loc!) NEXT THEN 
+   -1 __lsynf ! ;
+
+\ ------ Define Locals -------------------------------------------------------
+
+: (LOCAL)  \ ( a u -- ) 13.6.1.0086 create local identifiers
+   _tempwl @ ~IF __prep-locals THEN
+   ?dup IF __new-local ELSE drop __last-local THEN ; COMPILE-ONLY
+
+: __(OLOCAL)  \ ( a u -- ) MF create output local identifier
+   __olocs @ -8 < IF -323 throw THEN
+   2dup _tempwl _searchnt IF >r 2drop r> ELSE (local) _tempwl @ _>cfa THEN 
+   __olocs decr swap ;
+
+: LOCALS|  \ ( -- ) 13.6.2.1795 create up to 8 new local identifiers
+   __prep-locals
+   BEGIN __ilocs @ 16 > IF -320 throw THEN  
+         _parse-word 2dup s" |" str=
+  ~WHILE dup ~IF -18 throw THEN
+         (local)
+   REPEAT drop 0 (local) ; IMMEDIATE COMPILE-ONLY
+
+VARIABLE __}  \ MF closing brace
+
+: __LOCALS{  \ ( -- ) MF create up to 16 new local identifiers
+   __prep-locals true
+   BEGIN __ilocs @ __ulocs @ + 16 > IF -320 throw THEN
+         _parse-word 2dup __} count str=
+  ~WHILE dup ~IF -18 throw THEN
+         pluck ~IF 2drop CONTINUE THEN 
+         2dup s" --" str= IF 2drop drop false CONTINUE THEN
+		 2dup s" ==" str= IF 2drop __ulocf on __olocs on CONTINUE THEN 
+         2dup s" |"  str= IF 2drop __ulocf on CONTINUE THEN
+		 2dup s" N:" str= IF 2drop 0 __ltyp ! CONTINUE THEN
+#IFDEF D+
+         2dup s" D:" str= IF 2drop 1 __ltyp ! CONTINUE THEN
+#ENDIF
+#IFDEF F+
+	 	 2dup s" F:" str= IF 2drop 2 __ltyp ! CONTINUE THEN
+#ENDIF
+#IFDEF Z+
+		 2dup s" Z:" str= IF 2drop 3 __ltyp ! CONTINUE THEN
+#ENDIF
+		 __olocs @ IF __(olocal) ELSE (local) THEN 
+   REPEAT rot drop
+   drop 0 1 __lsynf ! (local) ;
+
+: {:  \ ( -- ) 13.6.2.2550 create up to 16 new local identifiers
+   s" :}" __} _place __locals{ ; IMMEDIATE COMPILE-ONLY
+
+: {   \ ( -- ) MF like standard {: but with single { } braces  
+   s" }" __} _place __locals{ ; IMMEDIATE COMPILE-ONLY
+
+\ ------ System Integration --------------------------------------------------
+
+: :=  \ ( x -- ) MF synonym for TO (like Pascal assignment)
+   _tempwl @ IF [,] to ELSE -32 THROW THEN ; IMMEDIATE
+
+: +=  \ ( x -- ) MF synonym for +TO
+   _tempwl @ IF [,] +to ELSE -32 THROW THEN ; IMMEDIATE
+
+: __LTO  \ ( x 'lname'-- ) 13.6.1.0086 compile store x in local 
+   >in @ ' dup @ ['] _[loc@] @ = IF nip __(loc!) EXIT THEN
+   drop >in ! deferred to ;
+IS TO
+
+: __L+TO  \ ( x 'lname'-- ) MF compile add x to local
+   >in @ ' dup @ ['] _[loc@] @ = IF nip __(loc+!) EXIT THEN
+   drop >in ! deferred +to ;
+IS +TO
+
+: __LFINDWORD  \ ( a u -- 0 | xt f ) MF find locals in temporary wordlist
+   _tempwl @ IF 2dup _tempwl _searchnt ?dup IF 2swap 2drop EXIT THEN THEN 
+   deferred _find-word ;
+IS _FIND-WORD
+
+: __(,OLOC) \ MF put output locals on stack
+   __olocs @ ?dup IF
+     invert FOR >r NEXT __olocs @ invert FOR r> execute NEXT
+   THEN ;
+
+: __(;LOC) \ MF factor
+   _tempwl @ IF __tlocs @ __tloce @ =
+     ~IF __(,oloc) __tloce @ __tlocs @ here pluck - move
+	 __tlocs @ __tloce @ - allot [,] _[;l]
+	 THEN _tempwl off __lsynf off __tlocs off __tloce off
+   THEN ;   
+
+: __L;  \ ( -- ) MF clear local identifiers and end current definition
+   __(;loc) deferred ; ;
+IS ;
+
+: __LDOES>  \ ( -- ) MF clear local identifiers and start does> definition
+   __(;loc) deferred does> ;
+IS DOES>
+
+: __LEXIT  \ ( -- ) MF clear local identifiers and exit current word
+   __olocs @ IF -322 THROW THEN
+   __ldepth @ 1 > IF [,] _[;l] THEN deferred exit ;
+IS EXIT
+
+: __LRESETSTACKS  \ ( -- ) clear locals on abort
+   deferred _reset-stacks _tempwl off __lsynf off ;
+IS _RESET-STACKS
+
+: __LEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -320 OF ." too many locals" EXIT ENDOF
+	 -321 OF ." repeated locals declaration" EXIT ENDOF
+	 -322 OF ." EXIT not allowed with output locals" EXIT ENDOF
+	 -323 OF ." too many output locals" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __LENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" #LOCALS" str= IF 2drop 16 true EXIT THEN
+   2dup s" LOCALS" str= IF 2drop true true EXIT THEN
+   2dup s" LOCALS-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

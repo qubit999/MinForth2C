@@ -1,0 +1,43 @@
+\ ============================================================================
+\  MINFORTH V3.4 MEMORY-ALLOCATION WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+
+#INCLUDE core.mfc
+C
+C #define MFMEMORY
+
+\ ------ Memory Allocation by OS ---------------------------------------------
+
+: ALLOCATE  \ ( u -- a ior ) 14.6.1.0707 allocate u bytes of data space
+C  mferr(mfin(1);mfout(1));
+C  mfCell a=(mfCell)malloc(mftos);
+C  if (a) mftos=a,mfpush(0); else mfpush(-59); ;
+
+: FREE  \ ( a -- ior ) 14.6.1.1605 return allocated data space to host
+C  mferr(mfin(1));
+C  free((void*)mftos); // succeeds always
+C  mftos=0; ;
+
+: RESIZE  \ ( a1 u -- a2 ior ) 14.6.1.2145 change allocated data space size
+C  mferr(mfin(2));
+C  mfCell a=(mfCell)realloc((void*)mfsec,mftos);
+C  if (a) mfsec=a,mftos=0; else mftos=-61; ;
+
+\ ------ System Integration --------------------------------------------------
+
+: __MEXCMSG  \ ( xc -- ) display exception message
+   CASE
+     -59 OF ." ALLOCATE error" EXIT ENDOF
+\	 -60 OF ." FREE error" EXIT ENDOF
+	 -61 OF ." RESIZE error" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __MENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" MEMORY-ALLOC" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

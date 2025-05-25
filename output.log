@@ -1,0 +1,34 @@
+
+MinForth V3.4 to C Transpiler
+-----------------------------
+Reading Forth source file hello.mfc
+Including core.mfc
+Including except.mfc
+Including facility.mfc
+Including file.mfc
+Including search.mfc
+Including memory.mfcDEBUG: Processing token: ' mfCell p=lseek(mftos,0,SEEK_CUR);  '
+DEBUG: Processing token: ' mfCell e, p=lseek(mftos,0,SEEK_CUR);  '
+DEBUG: Processing token: ' e=lseek(mftos,0,SEEK_END), lseek(mftos,p,SEEK_SET);  '
+DEBUG: Processing token: ' r=lseek(h,mftos,SEEK_SET);  '
+DEBUG: Processing token: '    else { *b=0; lseek(fid,-1,SEEK_CUR); break; } }  '
+DEBUG: Processing token: ' chdir(mfib); ;  '
+
+Including double.mfc
+Including float.mfc
+Including complex.mfc
+Including locals.mfc
+Including string.mfc
+Including block.mfc
+Including tools.mfc
+Including functions.mfc
+Total definitions: 961
+ - in dictionary:  785
+ - therein hidden: 125
+Writing C target file hello.cDEBUG: Processing token: ' mfCell p=lseek(mftos,0,SEEK_CUR);  '
+DEBUG: Processing token: ' mfCell e, p=lseek(mftos,0,SEEK_CUR);  '
+DEBUG: Processing token: ' e=lseek(mftos,0,SEEK_END), lseek(mftos,p,SEEK_SET);  '
+DEBUG: Processing token: ' r=lseek(h,mftos,SEEK_SET);  '
+DEBUG: Processing token: '    else { *b=0; lseek(fid,-1,SEEK_CUR); break; } }  '
+DEBUG: Processing token: ' chdir(mfib); ;  '
+

@@ -1,0 +1,326 @@
+\ ============================================================================
+\  MINFORTH V3.4 PROGRAMMING-TOOLS WORDSET DEFINITIONS
+\ ============================================================================
+\ provided "as is" as per the license conditions stated in file mflicense.txt 
+
+#INCLUDE core.mfc
+\ optional:
+\ #INCLUDE double.mfc
+\ #INCLUDE float.mfc
+\ #INCLUDE complex.mfc
+\ #INCLUDE locals.mfc
+\ #INCLUDE facility.mfc
+C
+C #define MFTOOLS
+
+\ already in CORE:
+\ STATE BYE .S
+\ not implemented:
+\ ASSEMBLER CODE ;CODE - use C
+\ VIEW LOCATE EDITOR
+\ FORGET - obsolete
+
+\ ------ Common useful Forth words -------------------------------------------
+   
+DEFER CS-PICK  \ 15.6.2.1015 pick control flow stack item
+IS PICK
+
+DEFER CS-ROLL  \ 15.6.2.1020 roll control flow stack items
+IS ROLL
+
+: N>R  \ ( xn..x1 n -- r: xn..x1 n ) 15.6.2.1908 move n items to returnstack
+   dup FOR swap >r NEXT >r ; 
+
+: NR>  \ ( r: xn..x1 n -- xn..x1 n ) 15.6.2.1940 move n items from returnstack
+   r> dup FOR r> swap NEXT ; 
+
+: ?   \ ( adr -- ) 15.6.1.0600 display cell value stored at adr
+   @ . ;
+   
+: AHEAD  \ 15.6.2.0702 unconditional forward jump (unconditional IF)
+   [,] _[jmp] _mark 1 , ; IMMEDIATE COMPILE-ONLY
+
+\ ------ Quotations ----------------------------------------------------------
+
+: [:  \ ( -- ) MF start a nested unnamed definition
+#IFDEF (LOCAL)
+   __tlocs @ >r __tloce @ >r _tempwl @ >r __lsynf off
+#ENDIF
+   _latest @ >r [,] ahead >r :noname ; IMMEDIATE COMPILE-ONLY
+
+: ;]  \ ( -- xt ) MF end a nested unnamed definition
+   [,] ; ] r> [,] then [,] literal r> _latest ! 
+#IFDEF (LOCAL)   
+   r> _tempwl ! r> __tloce ! r> __tlocs ! __tlocs @ __tloce @ - here cell- +!
+#ENDIF
+   ; IMMEDIATE COMPILE-ONLY
+
+\ ------ Synomymous Words ----------------------------------------------------
+
+: ALIAS  \ ( oldxt 'newname' -- ) MF create an equivalent word
+   defer here cell- defer! ;
+
+: SYNONYM  \ ( 'newname' 'oldname' -- ) 15.6.2.2264 create an equivalent word
+   defer ' here cell- defer! ;
+
+\ ------ Conditional Interpretation ------------------------------------------
+
+: [DEFINED]  \ ( 'name' -- f ) 15.6.2.2530.30 set flag if name is found
+   bl word find nip 0<> ; IMMEDIATE
+
+: [UNDEFINED]  \ ( 'name' -- f ) 15.6.2.2530.34 set flag if name is not found
+   [,] [defined] 0= ; IMMEDIATE
+
+: [ELSE]  \ ( -- ) 15.6.2.2531 [IF] target when flag is false
+   1 BEGIN BEGIN bl word count dup WHILE
+           2dup s" [IF]" str= IF 2drop 1+ ELSE
+           2dup s" [ELSE]" str= IF 2drop 1- dup IF 1+ THEN ELSE
+		        s" [THEN]" str= IF 1- THEN THEN THEN
+           ?dup ~IF EXIT THEN
+           REPEAT 2drop refill ~IF -39 throw THEN
+    REPEAT drop ; IMMEDIATE
+
+: [IF]  \ ( f -- ) 15.6.2.2532 skip to [ELSE] or [THEN] when flag is false
+   0= IF [,] [else] THEN ; IMMEDIATE
+
+: [THEN]  \ ( -- ) 15.6.2.2533 skip target of [IF] or [ELSE]
+   ; IMMEDIATE
+   
+346 CONSTANT MINFORTH  \ MF let MinForth be recognized by [DEFINED]
+
+\ ------ Wordlist Operations ------------------------------------------------- 
+
+: _NAME.  \ ( cfa -- ) MF display name
+   _<cfa _>name count type space ;
+
+: TRAVERSE-WORDLIST  \ ( xt wid -- f ) 15.6.2.2297 push nt and execute words
+   2>r BEGIN r> @ dup >r @ 
+       WHILE r@ 1 rpick execute
+      ~UNTIL 2r> 2drop ;
+
+: NAME>STRING  \ ( nt -- a u ) 15.6.2.1909.10 get name of word nt
+   _>name count ;
+
+: NAME>INTERPRET  \ ( nt -- xt|0 ) 15.6.2.1909.20 nt's interpretation token
+   dup _>pfa @ 2 and IF drop 0 ELSE _>cfa THEN ;
+
+: NAME>COMPILE  \ ( nt -- x ct )  15.6.2.1909.10 nt's compilation token(s)
+   dup _>cfa swap _>pfa @ 1 and ~IF ['] compile, THEN ;
+
+: WORDS  \ ( -- ) 15.6.1.2465 display first wordlist in search order 
+   cr 0 _context @ @
+   BEGIN dup @
+   WHILE dup name>string type space space @
+     swap 1+ dup 100 =
+	 IF cr ." -- press SPACE to continue " key 32 <>
+	    IF BREAK THEN drop 0 cr
+	 THEN swap
+   REPEAT 2drop ;
+
+\ ------ Recognizers ----------------------------------------------------------
+
+\ Recognizer record: {link,rec,rtxt,ctxt} 
+   
+: SHOW-RECOGNIZERS  \ ( -- ) MF display recognizer list
+   cr ." Recognizers:" _reclist @ dup ~IF drop EXIT THEN 
+   BEGIN dup 2 cells - cr _name. ." : "
+     dup 3 cells + dup @ _name. space cell- dup @ _name. space cell- @ _name.
+     @ here over 1- u<
+   UNTIL drop ;
+
+: SWAP-RECOGNIZER  \ ( <name> -- ) MF exchange place with previous recognizer
+   ' >body >r _reclist dup @ dup ~IF i" goto rs;" THEN
+   dup @ ~IF i" rs:" rdrop -21 throw THEN 
+   BEGIN dup @ r@ =
+     IF r> rot dup @ >r rot dup @ rot ! over @ swap ! r> swap ! EXIT THEN
+     dup @
+   ^WHILE rot drop
+   REPEAT 2drop rdrop ;
+
+: <IN  \ ( -- ) MF reset input source for re-scan by recognizers
+   _srcadr @ _parsed cell+ @ - >in ! ;
+
+\ ------ Stack und Hex Dump --------------------------------------------------
+
+: ..  \ ( x.. -- ) MF clear stacks
+   _reset-stacks ;
+   
+: .S  \ ( -- ) 15.6.1.0220 display stack content
+   depth FOR i" mfprintn(mfstk[fn+1]);" space NEXT ;
+
+: .RS  \ ( -- ) MF display return stack content
+   _rdepth FOR i" mfprintx(mfrst[fn+1]);" space NEXT ;
+
+[DEFINED] F. [IF]
+: .FS  \ ( -- ) MF display return stack content
+   fdepth FOR i" mfprintf(mffst[fn+1]);" space NEXT ;
+[THEN]
+
+: DUMP  \ ( adr u -- ) 15.6.1.1280 memory range hex dump
+   #IFDEF VT vtbright vtgreen #ENDIF
+   4095 and base @ -rot hex over + over -16 and  \ b adrlo adrhi adr
+   cr ."     Address:   " 16 FOR n u. space NEXT ." 0123456789ABCDEF"
+   BEGIN 2dup u> #IFDEF VT vtbright vtgreen #ENDIF
+   WHILE cr dup 12 u.r space #IFDEF VT vtnormal #ENDIF '|' emit dup >r 
+         16 BEGIN swap 2over pluck -rot within 
+                  IF dup c@ 0 <# # # #> ELSE s"   " THEN type
+				  1+ swap 1- dup 4 mod
+				  IF bl ELSE '|' THEN emit dup
+           ~UNTIL 2drop space r> #IFDEF VT vtbright vtcyan #ENDIF
+         16 BEGIN swap 2over pluck -rot within
+                  IF dup c@ dup bl 128 within 0= IF drop '.' THEN emit
+                  ELSE space THEN 1+ swap 1- dup
+           ~UNTIL drop
+   REPEAT 2drop drop base ! #IFDEF VT vtnormal #ENDIF ;
+   
+\ ------ Decompiler for Hilevel Words ----------------------------------------
+
+: __SEE-PAR  \ ( r: cfa -- ) MF show parameter in pfa
+   r@ cell+ @ 0 .r ;
+
+: __SEE-COLON  \ ( cfa -- ) MF show hilevel definition
+   BEGIN cell+ dup @     
+   WHILE dup @ dup _name. 
+    @ CASE
+    ['] _[lit] @ OF cell+ dup ? ENDOF
+#IFDEF _[L]
+	['] _[l] @ OF cell+ dup ? ENDOF
+    ['] _[l:] @ OF cell+ dup ? ENDOF
+#ENDIF
+#IFDEF _[FLIT]
+    ['] _[flit] @ OF dup cell+ f@ f. float+ ENDOF 
+#ENDIF
+    ['] _[jmp] @ OF cell+ dup ?  dup @ 0> over cell+ @ 0= and IF
+		  ." [: " 5 cells + __see-colon i" mfup;" ." ;] " 2 cells +	
+		THEN ENDOF
+    ['] _[jmpz] @ OF cell+ dup ? ENDOF
+	['] _[slit] @ OF dup cell+ count '"' emit type '"' emit space
+	                 dup cell+ c@ 2 + aligned + ENDOF
+	['] _<does @ OF ." ; : " 2 cells + ENDOF
+    ENDCASE   
+   REPEAT drop ;
+
+: XT-SEE  \ ( xt -- ) 15.6.1.2194 display next word's definition
+   >r cr r@ _origin u<
+   IF ." C " r@ _name. ELSE 
+    r@ @ CASE
+	  ['] _[:] @
+	    OF ." : " r@ _name. r@ __see-colon ." ; " ENDOF
+	  ['] _[create] @
+        OF ." CREATE " r@ _name. ." ( " r@ 2 cells + .
+		   ." <DOES " r@ cell+ @ __see-colon ." ) " ENDOF
+      ['] _[var] @
+	    OF ." VARIABLE " r@ _name. '[' emit __see-par ']' emit ENDOF
+	  ['] _[buf] @
+	    OF __see-par ."  BUFFER: " r@ _name. ENDOF
+	  ['] _[const] @
+	    OF __see-par ."  CONSTANT " r@ _name. ENDOF
+	  ['] _[defer] @
+	    OF ." DEFER " r@ _name. ." IS "
+		   r@ _<cfa _>pfa @ -4 and _name. ENDOF
+      ['] _[val] @
+	    OF r@ 4 cells + r@ 2 cells + @ CASE
+		  ['] ! OF ." VALUE " r@ _name. @ '[' emit 0 .r ']' emit ENDOF 
+#IFDEF 2VALUE
+          ['] 2! OF ." 2VALUE " r@ _name. 2@ '[' emit 0 d.r ']' emit ENDOF
+#ENDIF
+#IFDEF FVALUE
+          ['] f! OF ." FVALUE " r@ _name. f@ ." [ " f. ']' emit ENDOF
+#ENDIF
+#IFDEF ZVALUE
+		  ['] z! OF ." ZVALUE " r@ _name. dup f@ float+ f@
+		  		    ." [ " f. f. ']' emit ENDOF
+#ENDIF
+          -342 throw
+		  ENDCASE
+		 ENDOF
+       -340 throw
+     ENDCASE THEN
+   r> _<cfa _>pfa @ dup 1 and IF ."  IMMEDIATE" THEN
+   2 and IF ."  COMPILE-ONLY" THEN ;
+
+: SEE  \ ( <name> -- ) 15.6.1.2194 display next word's definition
+   ' xt-see ;
+
+\ ------ Stepping Debugger ---------------------------------------------------
+
+VARIABLE __DEBFLAG  \ halt flag
+VARIABLE __DEBXT    \ cfa of debugged word
+
+: __DEBLIT  \ _debstep factor
+C  mfprintn(mfat(mfip)); ;
+
+: __DEBSTEP  \ ( -- ) called by _[deb:] VM
+C  static int xf=0, rf=0;
+C deb:
+   __debflag @ ~IF EXIT THEN cr
+C  mfemit('$'), mfprintux((mfCell)(mfip-1)), mfprint(": "), mfStacks(xf,rf);
+C  mfprint(xf<0?"deb$ ":"deb# ");
+   i" mfpush(mfat(mfip-1));" ^IF dup _name. ELSE drop EXIT THEN
+   CASE 
+     ['] _[lit] OF __deblit ENDOF
+	 ['] _[jmp] OF __deblit ENDOF
+	 ['] _[jmpz] OF __deblit ENDOF
+	 ['] _[slit] OF '"' emit i" mfprint((char*)mfip+1);" '"' emit ENDOF
+#IFDEF FLITERAL
+	 ['] _[flit] OF i" mfprintf(mffat(mfip));" ENDOF
+#ENDIF
+#IFDEF (LOCAL)
+	 ['] _[l] OF __deblit ENDOF
+	 ['] _[l:] OF __deblit ENDOF
+#ENDIF
+   ENDCASE 
+   __key space
+   CASE
+	'd' OF ." <decimal>" i" xf=0; goto deb;" ENDOF
+	'x' OF ." <hex>" i" xf=-1; goto deb;" ENDOF
+	'r' OF ." <r: on/off>" i" rf^=-1; goto deb;" ENDOF
+    't' OF ." <type>" space '"' emit i" mftype(mfsec,mftos&127);"
+           '"' emit i" goto deb;" ENDOF
+    'q' OF ." <quit>" __debflag off ENDOF
+	'e' OF ." <exit> " __debflag off i" mfw=0;" ENDOF
+	'u' OF ." <unbug> " __debflag off ['] _[:] @ __debxt @ ! ENDOF
+	'h' OF ." <Help Decimal heX Type Rstack Quit Exit Unbug"
+	       i" goto deb;" ENDOF
+    27  OF ." <esc>" __debflag off ENDOF
+   ENDCASE ;
+
+: _[deb:] \ ( -- .. ) nest and step through hilevel instructions
+C  mferr(mfrout(1));
+C  mfrpush(mfip); mfip=(mfXT**)mfw+1;
+   __debflag on i" mfpush(mfw);" __debxt !
+C  while(mfw=*mfip++,mfw) {
+   __debstep
+C  (*mfw)(); } // MinForth VM
+C  mfip=(mfXT**)mfrpop(); ;
+
+: _UNBUG  \ ( nt -- nt ) unbug factor
+   dup _>cfa dup @ ['] _[deb:] @ = IF ['] _[:] @ swap ! ELSE drop THEN ;
+
+: UNBUG-ALL  \ ( -- ) unbug all words in compilation wordlist 
+   ['] _unbug _current @ traverse-wordlist ;
+
+: UNBUG  \ ( <name> -- ) MF disables debugging of colon word NAME 
+   ' _<cfa _unbug drop ;
+
+: DEBUG  \ ( <name> -- ) MF enables debugging of colon word NAME
+   ' dup @ ['] _[:] @ <> IF drop -341 throw EXIT THEN
+   ['] _[deb:] @ swap ! ;
+ 
+\ ------ System Integration --------------------------------------------------
+
+: __TEXCCODE  \ ( xc -- ) display exception message
+   CASE
+	 -340 OF ." unknown execution token" EXIT ENDOF
+	 -341 OF ." no colon definition" EXIT ENDOF
+	 -342 OF ." unknown value type" EXIT ENDOF
+	 dup
+   ENDCASE
+   deferred _excmsg ;
+IS _EXCMSG
+
+: __TENVIRONMENT  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" TOOLS" str= IF 2drop true true EXIT THEN
+   2dup s" TOOLS-EXT" str= IF 2drop false true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

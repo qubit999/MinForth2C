@@ -1,0 +1,46 @@
+\ --- data defs ---
+5 variable x         
+5 constant first
+
+\ define not-equal
+\ : <> = 0= ;
+
+\ RESULT prints n1
+: RESULT ( n1 -- )
+  ." Result: " . CR
+;
+
+\ add two params + x + first, then RESULT
+: CALC_SUM_PLUS_5_5 ( n1 n2 -- )
+  + x @ + first + RESULT
+;
+
+\ increment
+: INCREMENT ( n1 -- n+1 )
+  1 +
+;
+
+\ compare to 20
+: CHECK_LARGER_THAN_20 ( n1 -- )
+  dup 20 >
+  IF
+    . ." Larger than 20" CR
+  ELSE
+    . ." Not larger than 20" CR
+  THEN
+;
+
+\ countdown loop
+variable counter
+: WHILE_LOOP_TEST ( n1 -- n2 )
+  dup counter !
+  ." Starting while loop with: " counter @ . CR
+  BEGIN
+    counter @ 1 <>
+  WHILE
+    counter @ . CR
+    counter @ 1 - counter !
+  REPEAT
+  ." Done" CR
+  counter @
+;

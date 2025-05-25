@@ -1,0 +1,98 @@
+\ ============================================================================
+\ MINFORTH V3.4 EXCEPTION WORDSET
+\ ============================================================================
+\ provided "as is" as per license conditions in file mflicense.txt 
+
+\ Optional MinForth wordset for the MF2C transpiler
+\ to provide standard Forth exception handling words
+
+#INCLUDE core.mfc
+\ optional:
+\ #INCLUDE facility.mf
+\ Already in CORE:
+\ ABORT ABORT" CATCH THROW
+C
+C #define MFEXCEPTION
+
+\ ------ Exception Backtrace -------------------------------------------------
+C
+C mfCell mfxcs[19]; // exception buffer {fl,xc,w,ip,depth,6xd,rdepth,6xr,fd}
+C mfCell mfbtf=1;   // backtrack display flag
+C mfFlt mffxcs[5];  // {6xf}
+
+: __XCTRACE  \ ( xc -- xc ) MF dump stacks to exception buffers
+C  mfCell d=mfsp-mfstk-1, rd=mfrp-mfrst, fd=mffp-mffst;
+C  if (mfxcs[0]==mftos) return;
+C  memset(mfxcs,0,sizeof(mfxcs)), memset(mffxcs,0,sizeof(mffxcs));
+C  mfxcs[0]=mfxcs[1]=mftos, mfxcs[2]=(mfCell)mfw, mfxcs[3]=(mfCell)mfip;
+C  mfxcs[4]=d, mfxcs[11]=rd, mfxcs[18]=fd;
+C  d=min(d,6), rd=min(rd,6), fd=min(fd,6);
+C  memcpy(mfxcs+5,mfsp-d,d*MFSIZE);
+C  memcpy(mfxcs+12,mfrp+1-rd,rd*MFSIZE);
+C  memcpy(mffxcs,mffp+1-fd,fd*MFSIZE*MFFLTSIZE); ;
+C
+C void mfxttrace(mfCell ofs) {
+C   mfprint(" <- "), mfprint((char*)mfat(mfxt-1)+1);
+C   if (ofs>0) { mfemit(':'), mfprintn(ofs); } }
+
+: __XCBACKTRACE  \ ( -- ) MF analyze exception buffer
+C  mfCell w=mfxcs[2], ip=mfxcs[3], d=mfxcs[4], rd=mfxcs[11], fd=mfxcs[18];
+C  mfxcs[0]=0; mfCell ofs;
+C  if (!w) return;
+C  if (d||rd||fd) { 
+C    mfprint("\nStacks: "); 
+C    if (rd) { mfprint("r: "); 
+C      if(rd>6) mfprint(".. ");
+C	   for (int i=0; i<min(rd,6); i++) {
+C        if (mfbtf&&(mfseekxt(mfxcs[12+i])>=0)) mfprint("^ ");   
+C        else { mfemit('$'), mfprintux(mfxcs[12+i]), mfemit(' '); } }
+C      mfprint("| "); }
+C    if (fd) { mfprint("f: ");
+C      if (fd>6) mfprint(".. ");
+C	   for (int i=0; i<min(fd,6); i++) {
+C        mfprintf(mffxcs[i]), mfemit(' '); }
+C      mfprint("| "); }
+C    if (d) {
+C      if (d>6) mfprint(".. ");
+C	   for (int i=0; i<min(d,6); i++) {
+C		 mfprintn(mfxcs[5+i]), mfemit(' '); }
+C      mfprint("-- "); } }
+C  mfprint("\nBacktrace: ");
+C  mfprint((char*)(mfat(w-MFSIZE)+1));
+C  if (!ip) return;
+C  ofs=mfseekxt(ip-MFSIZE); if (ofs<0) return;
+C  mfxttrace(ofs);
+C  if (!rd) return;
+C  for (int i=min(rd,7)-1; i>=0; i--) {
+C    ofs=mfseekxt(mfxcs[15+i]-MFSIZE); if (ofs<0) continue; 
+C    mfxttrace(ofs); } ;
+
+: WHERE
+   ." -> " i" mfpush(mfxcs[1]), mfbtf=0;" _excmsg i" mfbtf=1;" ;
+
+\ ------ System Integration --------------------------------------------------
+
+: __XCTHROW  \ ( xc -- ) 9.6.1.2275 throw an exception when xc!=0
+   ^IF i" if(mfsp<=mfstk) mfup,mftos=mfsec;" __xctrace THEN
+   deferred throw ;
+IS THROW 
+
+[DEFINED] VT [IF]
+: __XCEXCSRC
+   vtyellow vtbright deferred _excsrc vtnormal ;
+IS _EXCSRC
+[THEN]
+
+: __XCEXCCODE  \ ( xc -- ) MF display exception message
+  #IFDEF VT vtred vtbright #ENDIF
+   deferred _exccode
+  #IFDEF VT vtnormal vtcyan vtbright #ENDIF
+   __xcbacktrace
+  #IFDEF VT vtnormal #ENDIF ;
+IS _EXCCODE
+
+: __XCENVIRONMENT?  \ ( a u -- a u | x.. t ) MF extend environment query
+   2dup s" EXCEPTION" str= IF 2drop true true EXIT THEN
+   2dup s" EXCEPTION-EXT" str= IF 2drop true true EXIT THEN
+   deferred _environment? ;
+IS _ENVIRONMENT?

@@ -1,0 +1,248 @@
+\ ============================================================================
+\ MINFORTH V3.4 BLOCK SCREEN EDITOR
+\ ============================================================================
+\ provided 'as is' as per license conditions in file mflicense.txt 
+
+#INCLUDE block.mfc
+#INCLUDE facility.mfc
+
+\ ------ Block Editor --------------------------------------------------------
+
+VARIABLE __CURSOR  \ ( -- a ) block-editor cursor 0..1023
+
+: __CURLN     __cursor @ 6 rshift ;           \ ( -- ln ) cursor line 0..15
+: __CURCOL    __cursor @ __curln 6 lshift - ; \ ( -- col ) cursor column 0..63
+: __CURPOS    4 __curcol + 2 __curln + ;      \ ( -- x y ) cursor positiom
+: __CURADR    __curbuf @ __cursor @ + ;       \ ( -- a ) cursor address
+: __CURLNPOS  4 2 __curln + ;                 \ ( -- x y ) line start position
+: __CURLNOFS  __curln 6 lshift ;			  \ ( -- o ) line start offset
+: __CURLNADR  __curbuf @ __curlnofs + ;  	  \ ( -- a ) line start address
+: __CURBLK    _curbib @ cell+ @ ;			  \ ( -- b ) current block
+
+: __SHOW-LINE  \ display current line
+   __curlnpos at-xy __curlnadr 64 type ;
+
+: __SHOW-SCREEN  \ display current buffer
+   __curbuf @ 16 FOR 4 n 2 + at-xy dup 64 type 64 + NEXT drop ;
+
+: __BESHCRS  \ ( f -- ) show/hide cursor
+   >r __curpos 2dup at-xy __curadr c@ r@ IF vtreverse THEN emit vtnormal
+   2dup drop 18 at-xy r@ IF '^' ELSE bl THEN emit
+   nip 68 swap at-xy r@ IF '<' ELSE bl THEN emit
+   r> IF 0 2 at-xy _curbib @ @ 0< IF 'u' ELSE bl THEN EMIT THEN
+   restore-xy ;
+
+: __HIDE-CURSOR  false __beshcrs ;
+: __SHOW-CURSOR  true __beshcrs ;
+
+: __BELNBLANK  \ ( a u -- ) blank line part
+   bl fill update __show-line ;
+
+: __BESCRBLANK  \ ( a u -- ) blank screen part
+   bl fill update __show-screen ;
+
+\ --- move cursor
+
+: __BERIGHT  \ MF right move cursor 1 character right
+   __cursor @ 1023 u< ~IF EXIT THEN
+   __cursor incr ;
+
+: __BELEFT  \ MF left move cursor 1 character left
+   __cursor @ ~IF EXIT THEN
+   __cursor decr ;
+
+: __BEDOWN  \ MF down move cursor 1 line down
+   __cursor @ 960 u< ~IF EXIT THEN
+   64 __cursor +! ;
+
+: __BEUP  \ MF up move cursor 1 line up
+   __cursor @ 64 u< IF EXIT THEN
+   -64 __cursor +! ;
+
+: __BEFIRST  \ MF ^home move cursor to start of page
+   0 __cursor ! ;
+
+: __BEHOME  \ MF home move cursor to start of current line
+   __curcol negate __cursor +! ;
+
+: __BEEND  \ MF end move cursor to end of current line
+   63 __curcol - __cursor +! ;
+
+: __BELAST  \ MF ^end move cursor to end of page
+   1023 __cursor ! ;
+
+: __BERETURN  \ MF ret move cursor to start of next line
+   __bedown __behome ;
+
+\ --- edit characters
+
+: __BEDELETE  \ MF del delete character under cursor
+   __curadr dup >r dup 1+ swap 63 __curcol dup >r - move
+   bl 63 r> - r> + c! update __show-line ;
+
+: __BEINSERT  \ MF ins insert blank character at cursor
+   __curadr dup >r dup 1+ 63 __curcol - move
+   bl r> c! update __show-line ;
+
+: __BEBS  \ MF bs backspace
+   __cursor @ ~IF EXIT THEN
+   __beleft bl __curadr c! update __hide-cursor ;
+
+: __BECHAR  \ ( c -- c ) MF normal character
+   ekey>char IF __curadr c! update __hide-cursor __beright ELSE drop THEN
+   true ;
+
+\ --- edit lines
+
+: __BELERASE  \ MF ^ret erase current line
+   __curlnadr 64 __belnblank ;
+
+: __BELREREAD  \ MF esc reread current line from block-file
+   __curblk 1024 * __curlnofs + 0 _bfile @ reposition-file throw
+   __curlnadr 64 _bfile @ read-file throw drop __show-line ;
+
+: __BELERASELEFT  \ MF ^<- erase line left from cursor
+   __curlnadr __curcol __belnblank ;
+
+: __BELERASERIGHT  \ MF ^-> erase line right from cursor
+   __curadr 1+ 63 __curcol - __belnblank ;
+
+: __BELINSERT  \ MF ^F3 insert blank line
+   __curlnadr dup 64 + 15 __curln - 64 * move
+   __curlnadr 64 __bescrblank ;
+
+: __BELDELETE  \ MF ^F4 erase current line
+   __curlnadr dup 64 + swap 15 __curln - 64 * move
+   __curbuf @ 960 + 64 __bescrblank ;
+
+\ --- move to blocks
+
+VARIABLE __BEGO  \ MF block number text
+
+: __BELIST  \ ( b -- ) list block
+   0 0 at-xy list ;
+
+: __STLINE  \ move cursor to status line
+   0 18 at-xy ;
+
+: __BEBGOTO  \ MF shF5 goto selected block
+   __stline vterase ." Goto BLOCK # " __bego 4 accept __stline vterase 
+   __bego swap 0 0 2swap >number nip
+   ~IF drop dup 0 __cursize @ within
+	   IF __belist EXIT ELSE dup THEN
+   THEN 2drop
+   __stline ." ?? invalid block number (press key)" ekey drop
+   __stline vterase ;
+
+: __BEBFIRST  \ MF ^pgup goto first block
+   0 __belist ;
+
+: __BEBPRIOR  \ MF pgup goto preceding block
+   __curblk ?dup IF 1- __belist THEN ;
+
+: __BEBNEXT  \ MF pgdn goto next block
+   __curblk dup __cursize @ 1- u< IF 1+ __belist ELSE drop THEN ;
+
+: __BEBLAST  \ MF ^pgdn goto last block
+   0 1 at-xy __cursize @ 1- __belist ;
+
+\ --- edit blocks
+
+: __BEINPUT  \ ( a u -- f ) MF factor
+   __stline vterase type ekey __stline vterase ;
+
+: __BEBERASE  \ MF shF2 erase current block
+   s" Erase block? (y/n) " __beinput 'y' = ~IF EXIT THEN
+   __curbuf @ 1024 __bescrblank ;
+
+: __BEBINSERT  \ MF shF3 insert blank block
+   s" Insert block (last block will be deleted)? (y/n) "
+   __beinput 'y' = ~IF EXIT THEN
+   __cursize @ 1- __curblk over swap -
+   FOR 1- dup block 1 cells - over 1+ swap ! update NEXT
+   block 1024 __bescrblank ;
+
+: __BEBDELETE  \ MF shF4 delete current block
+   s" Delete block (current block will be overwritten)? (y/n) "
+   __beinput 'y' = ~IF EXIT THEN
+   __curblk dup __cursize @ 1- over -
+   FOR 1+ dup block 1 cells - over 1- swap ! update NEXT
+   block 1024 bl fill update __belist ;
+
+: __BEBREREAD  \ MF ^r reread block from block-file
+   __curbuf @ __curblk block-read __show-screen
+   1 _curbib @ ! __cursor off ;
+
+: __BEBSAVE  \ MF ^s save blocks
+   save-buffers ;
+
+\ --- miscellaneous
+
+: _STAMP$  \ ( -- a u ) MF build date string in 01Jan20 format  
+   s" xxx" ;  \ your own 3 letters sign
+   
+: __BEBSTAMP  \ MF ^t stamp first screen line (undo with esc in line 1)
+   time&date 0 <# _stamp$ holds # # 2drop drop _month$ holds 0 # #
+   bl hold '\' hold bl hold #> 2>r 2drop drop 2r>
+   __curbuf @ 51 + swap move __cursor @ __befirst __show-line __cursor ! ;
+
+: __BEHELP \ MF show help screen
+   16 FOR 4 n 2 + at-xy 64 spaces NEXT
+   s" Misc.:         shF1:help ^t:stamp ^s:save ^x:exit"
+   s" Edit block:    shF2:erase shF3:ins shF4:del shF5:goto"
+   s" Move to block: ^pgup:first pgup:prior pgdn:next ^pgdn:last"
+   s" Edit line:     esc ^ret/^<-/^->:tot/l/r-erase ^F3:ins ^F4:del"
+   s" Edit text:     chars bs ins del"
+   s" Move cursor:   arrows tab home end ^home ^end ret"
+   s" -- HELP (F1) ---- (^:ctrl+key sh:shift+key) --------------------"
+   vtbright vtcyan 7 FOR 4 n 2* 3 + at-xy type NEXT vtnormal
+   ekey drop __show-screen ;
+   
+: __BEEXIT  \ MF exit editor
+   save-buffers 0 2 at-xy bl emit ;
+
+\ --- editor interface
+
+: BLOCK-EDIT  \ ( u -- ) MF Block screen text editor
+   dup 0 blockfile-size within ~IF -35 throw then 
+   page s" ~c~v MinForth BLOCK-Editor" printf 9 spaces
+   s" shF1:Help  ^r:reRead  ^s:Save  ^x:eXit ~n" printf
+   list cr save-xy __cursor off
+   BEGIN __show-cursor ekey __hide-cursor ekey>fkey
+	IF CASE
+      k-left OF __beleft ENDOF
+      k-left k-ctrl-mask or OF __beleraseleft ENDOF
+	  k-right OF __beright ENDOF
+      k-right k-ctrl-mask or OF __beleraseright ENDOF
+      k-down OF __bedown ENDOF
+      k-up OF __beup ENDOF
+	  k-home OF __behome ENDOF
+	  k-end OF __beend ENDOF
+	  k-home k-ctrl-mask or OF __befirst ENDOF 
+	  k-end k-ctrl-mask or OF __belast ENDOF 
+	  k-delete OF __bedelete ENDOF
+	  k-insert OF __beinsert ENDOF
+	  k-prior OF __bebprior ENDOF
+	  k-prior k-ctrl-mask or OF __bebfirst ENDOF
+	  k-next OF __bebnext ENDOF
+      k-next k-ctrl-mask or OF __beblast ENDOF
+      k-f3 k-ctrl-mask or OF __belinsert ENDOF
+      k-f4 k-ctrl-mask or OF __beldelete ENDOF
+      k-f1 k-shift-mask or OF __behelp ENDOF
+      k-f2 k-shift-mask or OF __beberase ENDOF
+      k-f3 k-shift-mask or OF __bebinsert ENDOF
+      k-f4 k-shift-mask or OF __bebdelete ENDOF
+      k-f5 k-shift-mask or OF __bebgoto ENDOF ENDCASE
+	ELSE
+      dup 24 = IF drop __beexit BREAK THEN
+      CASE
+      27 OF ( esc ) __belreread ENDOF
+      20 OF ( ^t ) __bebstamp ENDOF
+	  19 OF ( ^s ) __bebsave ENDOF
+	  18 OF ( ^r ) __bebreread ENDOF
+	  13 OF ( ret ) __bereturn ENDOF
+	  8 OF ( bs ) __bebs ENDOF
+      1 OF ( ^ret ) __belerase ENDOF
+     __bechar ENDCASE
+    THEN
+   AGAIN save-buffers restore-xy ;
