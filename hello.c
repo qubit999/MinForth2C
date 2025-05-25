@@ -1,7 +1,7 @@
 /* ----------- MinForth C Target -----------
    - transpiled by minf2c ----- do not edit -
    - Forth source : hello.mfc
-   - built Sun May 25 05:11:58 2025
+   - built Sun May 25 05:48:34 2025
 
    (see license conditions in mflicense.txt)
 */

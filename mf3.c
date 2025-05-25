@@ -1,12 +1,47 @@
 /* ----------- MinForth C Target -----------
-   - transpiled by emf2c ----- do not edit -
+   - transpiled by minf2c ----- do not edit -
    - Forth source : mf3.mfc
-   - built Sun May 25 05:15:58 2025
+   - built Sun May 25 05:50:10 2025
 
    (see license conditions in mflicense.txt)
 */
+#if defined(__APPLE__)
+#  define __linux__   1
+#  define __unix__    1
+#  define __MACH__    1
+#  undef  __APPLE__
+#endif
 
 #include "mf3.h"
+
+// restore real POSIX syscall names
+#undef open
+#undef close
+#undef read
+#undef write
+#undef lseek
+#undef unlink
+#undef chdir
+#include <unistd.h>
+#include <fcntl.h>
+#include <setjmp.h>
+#undef _open
+#undef _close
+#undef _read
+#undef _write
+#undef _lseek
+#undef _unlink
+#undef _creat
+#undef _chdir
+#define _open   open
+#define _close  close
+#define _read   read
+#define _write  write
+#define _lseek  lseek
+#define _unlink unlink
+#define _creat  creat
+#define _chdir  chdir
+
 
 // --- Forward Declarations ---
 
@@ -13965,16 +14000,19 @@ mfNEXT
 }
 
 // --- C Main ---
-
-int main(int argc, char* argv[]) {
-  mfstk=malloc((1+mfstksize)*MFSIZE), mfsp=mfstk;
-  mflp=mfstk+mfstksize;
-  mfrst=malloc((1+mfrstsize)*MFSIZE), mfrp=mfrst;
-  mffst=malloc((1+mffstsize)*MFSIZE*MFFLTSIZE), mffp=mffst;
-  mfargc=argc, mfargv=argv;
-  mfTHROW=mfE5B4B40F;
-  setjmp(mfabort);
-  mf96272888(); // MAIN
+int main(int argc, char *argv[]) {
+    /* alloc stacks, pass args */
+    mfstk = malloc((1+mfstksize)*MFSIZE); mfsp = mfstk;
+    mflp  = mfstk + mfstksize;
+    mfrst = malloc((1+mfrstsize)*MFSIZE); mfrp = mfrst;
+    mffst = malloc((1+mffstsize)*MFSIZE*MFFLTSIZE); mffp = mffst;
+    mfargc = argc; mfargv = argv;
+    mfinit();               // init the Forth VM
+    if (setjmp(mfabort)==0) {
+        mf96272888(); // MAIN
+    }
+    mfexit();      // tidy up once
+    return 0;
 }
 
-// --- End ---
+// --- End of generated C ---
